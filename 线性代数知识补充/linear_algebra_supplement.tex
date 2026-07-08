@@ -1,0 +1,937 @@
+% !TEX program = xelatex
+\documentclass[12pt,a4paper]{ctexart}
+
+% ============ Packages ============
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{amsthm}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{float}
+
+% ============ Theorems ============
+\theoremstyle{definition}
+\newtheorem{definition}{定义}[section]
+\newtheorem{theorem}{定理}[section]
+\newtheorem{lemma}[theorem]{引理}
+\newtheorem{corollary}[theorem]{推论}
+\newtheorem{proposition}[theorem]{命题}
+\newtheorem{property}[theorem]{性质}
+\newtheorem{remark}{注记}[section]
+\newtheorem{example}{例}[section]
+\theoremstyle{plain}
+
+% ============ Math Notation ============
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\vect}{\operatorname{vec}}
+\newcommand{\eps}{\varepsilon}
+\newcommand{\grad}{\nabla}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2 \right\rangle}
+\newcommand{\abs}[1]{\left| #1 \right|}
+\newcommand{\Id}{\mathbb{I}}
+\newcommand{\calN}{\mathcal{N}}
+\newcommand{\calO}{\mathcal{O}}
+\newcommand{\calU}{\mathcal{U}}
+\newcommand{\calS}{\mathcal{S}}
+\newcommand{\calV}{\mathcal{V}}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator{\sgn}{sgn}
+\DeclareMathOperator{\rank}{rank}
+\DeclareMathOperator{\Span}{span}
+\DeclareMathOperator{\cond}{cond}
+\DeclareMathOperator{\Proj}{Proj}
+
+\newcommand{\innerproduct}[2]{\langle #1, #2 \rangle}
+
+% ============ Formatting ============
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{线性代数知识补充：谱分解、SVD、矩阵范数}
+\fancyhead[R]{\thepage}
+\fancyfoot[C]{}
+\renewcommand{\headrulewidth}{0.5pt}
+
+\titleformat{\section}{\Large\bfseries}{}{0em}{}
+\titleformat{\subsection}{\large\bfseries}{}{0em}{}
+
+% ============ Title ============
+\title{\vspace{-2cm}\textbf{优化算法所需的线性代数基础：\\[0.3em] 谱分解、奇异值分解、矩阵范数与相关主题}}
+\author{基于张贤科《高等线性代数》与多本教材综合整理}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{fancy}
+
+\begin{abstract}
+\noindent 本文档为深度学习优化器（Adam、Shampoo、Muon、PolarGrad 等）的学习提供\\
+\textbf{系统且详尽的线性代数基础}。
+
+\vspace{0.3cm}
+\noindent \textbf{核心问题意识}：为什么 Adam 怕旋转而 Muon 不怕？Shampoo 的 $L^{-1/4}GR^{-1/4}$ 到底在做什么？\\
+谱范数最陡下降的数学根源是什么？回答这些问题需要扎实理解以下工具：
+
+\vspace{0.3cm}
+\noindent 阅读建议：\S1--\S3 是必修基础，\S4--\S5 用于理解 Shampoo/Muon，\S6--\S7 用于理论分析，\S8 连接所有内容到优化器。
+\end{abstract}
+
+\tableofcontents
+
+\newpage
+
+% ===================================================================
+\section{特征值与谱分解}
+% ===================================================================
+
+\subsection{从线性变换到特征值}
+
+\begin{definition}[特征值与特征向量]
+  设 $A\in\C^{n\times n}$。若存在标量 $\lambda\in\C$ 和非零向量 $v\in\C^n$ 使得
+  \begin{equation}
+    A v = \lambda v,
+  \end{equation}
+  则称 $\lambda$ 为 $A$ 的\textbf{特征值}，$v$ 为对应的\textbf{特征向量}。
+\end{definition}
+
+\textbf{几何含义}：$A$ 作用在 $v$ 上等价于将 $v$ 沿自身方向缩放 $\lambda$ 倍——$v$ 的方向不变。特征向量是线性变换 $A$ 下的\textbf{不变方向}。
+
+\begin{definition}[特征多项式]
+  特征值由特征方程 $\det(A-\lambda I)=0$ 确定。$p_A(\lambda)=\det(\lambda I-A)$ 称为 $A$ 的\textbf{特征多项式}。
+  $n$ 阶矩阵有恰好 $n$ 个特征值（计重数）。
+\end{definition}
+
+\textbf{代数重数}：$\lambda$ 作为特征多项式根的重数。\\
+\textbf{几何重数}：$\lambda$ 对应的特征空间的维数 $\dim\ker(A-\lambda I)$。
+
+\textbf{重要性}：若几何重数=代数重数（对所有特征值），则 $A$ 可对角化。但一般矩阵不一定可对角化——可能出现 Jordan 块。
+
+\subsection{对称矩阵的谱定理}
+
+对一般矩阵，特征值可能是复数，特征向量不一定正交。但对于\textbf{实对称矩阵}，一切都很完美：
+
+\begin{theorem}[实对称矩阵的谱定理]\label{thm:spectral}
+  设 $A\in\R^{n\times n}$ 满足 $A^\top=A$（实对称）。则：
+  \begin{enumerate}[label=(\roman*)]
+    \item $A$ 的所有特征值都是实数；
+    \item 不同特征值对应的特征向量正交；
+    \item 存在\textbf{正交矩阵} $Q=[q_1,\ldots,q_n]\;(Q^\top Q=I)$ 和对角矩阵 $\Lambda=\diag(\lambda_1,\ldots,\lambda_n)$ 使得
+    \begin{equation}\label{eq:spectral}
+      A = Q\Lambda Q^\top = \sum_{i=1}^n \lambda_i\, q_i q_i^\top.
+    \end{equation}
+  \end{enumerate}
+\end{theorem}
+
+\begin{proof}[谱定理的证明概要]
+  \textbf{(i) 特征值为实数}：设 $Av=\lambda v$（$v\neq0$）。将等式左乘 $v^*$（共轭转置）：
+  \[
+    v^*Av = \lambda v^*v = \lambda \norm{v}^2.
+  \]
+  对两边取共轭转置：$(v^*Av)^* = v^*A^*v = v^*Av$（因为 $A=A^\top=\bar A$ 为实对称）。\\
+  所以 $v^*Av$ 是实数，从而 $\lambda = (v^*Av)/\norm{v}^2$ 也是实数。
+
+  \textbf{(ii) 正交性}：设 $Av=\lambda v$，$Aw=\mu w$，$\lambda\neq\mu$。则
+  \[
+    \lambda\ip{v}{w} = \ip{Av}{w} = \ip{v}{Aw} = \mu\ip{v}{w}.
+  \]
+  因为 $\lambda\neq\mu$，必然 $\ip{v}{w}=0$。
+
+  \textbf{(iii) 正交对角化}：对每个特征空间取正交归一基。不同特征空间的正交性保证它们合起来是 $\R^n$ 的正交归一基。将这些基向量排成 $Q$，即得 $AQ=Q\Lambda$，或 $A=Q\Lambda Q^\top$。
+\end{proof}
+
+\begin{remark}[为什么叫“谱”分解]
+  “谱 (spectrum)”来源于物理学——原子光谱的谱线对应能量算符的特征值。在数学中，矩阵的“谱”就是其特征值的集合：
+  $\sigma(A)=\{\lambda_1,\ldots,\lambda_n\}$。
+\end{remark}
+
+\begin{remark}[特征向量的符号]
+  注意：若 $q_i$ 是特征向量，则 $-q_i$ 也是。因此谱分解中的 $Q$ 不是唯一的（每列可有 $\pm 1$ 的符号歧义）。
+  在实际算法中（如 Shampoo 的特征基），这种符号歧义需要在 Adam 状态转换时保持一致——这是 SOAP 实现中容易出错的地方。
+\end{remark}
+
+\subsection{正定矩阵与半正定矩阵}
+
+\begin{definition}[正定 / 半正定]
+  实对称矩阵 $A=A^\top$ 称为：
+  \begin{itemize}
+    \item \textbf{正半定}（$A\succeq0$）：若对所有 $x\in\R^n$，$x^\top A x\ge0$；
+    \item \textbf{正定}（$A\succ0$）：若对所有 $x\neq0$，$x^\top A x>0$。
+  \end{itemize}
+\end{definition}
+
+\begin{theorem}[正定性的等价刻画]
+  对实对称矩阵 $A$，以下命题等价：
+  \begin{enumerate}[label=(\roman*)]
+    \item $A\succ0$；
+    \item $A$ 的所有特征值 $\lambda_i>0$；
+    \item 存在可逆矩阵 $B$ 使 $A=B^\top B$（Cholesky 分解或其推广）；
+    \item $A$ 的所有顺序主子式 $>0$（Sylvester 判据）。
+  \end{enumerate}
+\end{theorem}
+
+\begin{example}[Hessian 与正定性]
+  在优化中，$f$ 在局部极小点 $\theta^\star$ 处满足 $\grad f(\theta^\star)=0$ 且 $\grad^2 f(\theta^\star)\succeq0$。
+  若 Hessian 严格正定（$\succ0$），则 $\theta^\star$ 是严格局部极小。条件数 $\kappa=\lambda_{\max}/\lambda_{\min}$ 刻画了极小点附近曲率的各向异性程度。
+\end{example}
+
+\subsection{谱分解的计算：从特征方程到 QR 迭代}
+
+\textbf{小矩阵（$n\le4$）}：直接解特征方程 $\det(\lambda I-A)=0$。
+
+\textbf{大矩阵}：实践中使用 QR 迭代算法（Francis, 1961），这是现代数值线性代数的基石之一。
+
+\vspace{0.2cm}
+\textbf{QR 迭代的基本思想}：
+\begin{align*}
+  A_0 &= A \\
+  A_k &= Q_k R_k \quad\text{（QR 分解）} \\
+  A_{k+1} &= R_k Q_k \quad\text{（逆序乘积）}
+\end{align*}
+可以证明 $A_k$ 收敛到一个上三角矩阵（或拟上三角矩阵），其对角元就是特征值。带原点位移（shift）的 QR 迭代收敛速度极快，是 LAPACK 和 PyTorch（\texttt{torch.linalg.eigh}）背后的算法。
+
+\textbf{实践要点}：对于对称矩阵，使用 \texttt{eigh}（Hermitian 专用）而非 \texttt{eig}——
+前者快约 2--3 倍，且数值更稳定（保证实数输出）。
+
+% ===================================================================
+\section{奇异值分解 (SVD)}
+% ===================================================================
+
+\subsection{为什么需要 SVD？}
+
+谱分解仅适用于方阵（且最好是正规矩阵）。\textbf{奇异值分解 (SVD)} 是谱分解对\textbf{任意矩阵}（矩形、非对称）的推广。它是数据科学、机器学习中最重要的矩阵分解，没有之一。
+
+\begin{theorem}[奇异值分解]\label{thm:svd}
+  设 $G\in\R^{m\times n}$（$m\ge n$ 不妨设）。则存在正交矩阵
+  $U=[u_1,\ldots,u_m]\in\R^{m\times m}$，
+  $V=[v_1,\ldots,v_n]\in\R^{n\times n}$，
+  以及对角矩阵 $\Sigma=\diag(\sigma_1,\ldots,\sigma_n)\in\R^{m\times n}$，
+  其中 $\sigma_1\ge\sigma_2\ge\cdots\ge\sigma_n\ge0$，使得：
+  \begin{equation}\label{eq:svd}
+    \boxed{G = U\Sigma V^\top = \sum_{i=1}^{r} \sigma_i\, u_i v_i^\top},
+  \end{equation}
+  其中 $r=\rank(G)$ 是 $G$ 的秩。
+\end{theorem}
+
+\begin{itemize}
+  \item $\sigma_i$ 称为 $G$ 的\textbf{奇异值}（singular values）
+  \item $u_i$ 称为\textbf{左奇异向量}（left singular vectors）
+  \item $v_i$ 称为\textbf{右奇异向量}（right singular vectors）
+\end{itemize}
+
+\subsection{SVD 的几何含义}
+
+SVD 将任意线性变换分解为三步：
+\[
+  G: \R^n \xrightarrow{V^\top} \R^n \xrightarrow{\Sigma} \R^m \xrightarrow{U} \R^m
+\]
+\begin{enumerate}[label=(\arabic*)]
+  \item \textbf{旋转}（$V^\top$）：在输入空间 $\R^n$ 中旋转坐标系，使坐标轴对齐到 $G$ 的“主方向”（右奇异向量）
+  \item \textbf{缩放}（$\Sigma$）：沿每个对齐的方向按奇异值 $\sigma_i$ 缩放（可能降维——$\sigma_i=0$ 的方向被清零）
+  \item \textbf{旋转}（$U$）：在输出空间 $\R^m$ 中旋转到最终方向（左奇异向量）
+\end{enumerate}
+
+\begin{center}
+\begin{tikzpicture}[>=Stealth, scale=0.7]
+  % Unit circle in R^n
+  \draw[blue!30, fill=blue!5] (0,0) circle (2 and 1.5);
+  \node[blue] at (0,-2) {$\R^n$: 单位球};
+  \draw[->] (3,0) -- (5,0) node[midway, above] {$V^\top$（旋转）};
+  % Ellipse after V^T
+  \draw[blue!30, fill=blue!5] (7,0) circle (2 and 1.5);
+  \draw[->] (10,0) -- (12,0) node[midway, above] {$\Sigma$（缩放）};
+  % After Sigma: axes scaled
+  \draw[red!30, fill=red!5] (14,0) ellipse (2 and 0.5);
+  \draw[->] (17,0) -- (19,0) node[midway, above] {$U$（旋转）};
+  % Final ellipse in R^m
+  \draw[red!30, fill=red!5] (21,0) ellipse (1.5 and 1.0);
+  \node[red] at (21,-2) {$\R^m$: G(单位球)};
+\end{tikzpicture}
+\end{center}
+
+\textbf{关键直觉}：$G$ 将 $\R^n$ 中的单位球映射为 $\R^m$ 中的一个椭球。
+椭球的半轴长度恰好是 $\sigma_1,\ldots,\sigma_r$，方向由 $u_1,\ldots,u_r$ 给出。
+
+\subsection{SVD 的推导：利用 Gram 矩阵}
+
+\textbf{推导思路}：$G$ 不是方阵，我们不能直接做谱分解。但 $G^\top G$ 和 $GG^\top$ 都是对称半正定矩阵！
+
+\begin{itemize}
+  \item $G^\top G \in \R^{n\times n}$：半正定对称，有谱分解 $G^\top G = V\Lambda V^\top$，$\lambda_i\ge0$
+  \item 定义 $\sigma_i = \sqrt{\lambda_i}$（非负平方根）
+  \item $GG^\top \in \R^{m\times m}$：同样可对角化，且非零特征值与 $G^\top G$ 的完全相同
+\end{itemize}
+
+\begin{proof}[SVD 的构造性证明]
+  \textbf{第一步}：$G^\top G$ 是实对称半正定矩阵，由谱定理：
+  \[
+    G^\top G = V\Lambda V^\top,\qquad \Lambda=\diag(\lambda_1,\ldots,\lambda_n),\;\lambda_i\ge0.
+  \]
+  记 $\sigma_i=\sqrt{\lambda_i}$，排列使 $\sigma_1\ge\cdots\ge\sigma_n\ge0$。
+
+  \textbf{第二步}：定义 $u_i = \frac{1}{\sigma_i} G v_i$（对 $\sigma_i>0$ 的 $i$）。验证：
+  \[
+    \ip{u_i}{u_j} = \frac{1}{\sigma_i\sigma_j}\ip{G v_i}{G v_j}
+    = \frac{1}{\sigma_i\sigma_j} v_i^\top G^\top G v_j
+    = \frac{1}{\sigma_i\sigma_j} \lambda_j \ip{v_i}{v_j} = \delta_{ij}.
+  \]
+  所以 $\{u_i: \sigma_i>0\}$ 是标准正交组。将其扩充为 $\R^m$ 的标准正交基 $U=[u_1,\ldots,u_m]$。
+
+  \textbf{第三步}：验证 $U\Sigma V^\top = G$。对任意 $x\in\R^n$，将其在 $\{v_i\}$ 上展开：
+  \[
+    U\Sigma V^\top x = \sum_{i=1}^r \sigma_i u_i \ip{v_i}{x}
+    = \sum_{i=1}^r G v_i \ip{v_i}{x}
+    = G\left(\sum_{i=1}^n v_i v_i^\top\right) x = G x.
+  \]
+  其中用到 $\{v_i\}$ 是 $\R^n$ 的标准正交基（$V^\top V=I$）。
+\end{proof}
+
+\begin{remark}
+  这个构造性证明说明了为什么 SVD 不需要额外假设：$G^\top G$ 总是对称半正定，因此总是可正交对角化。SVD 的普适性来源于此。
+\end{remark}
+
+\subsection{Gram 矩阵的优化含义}
+
+在优化中，$G_t G_t^\top$ 和 $G_t^\top G_t$ 频繁出现：
+
+\begin{itemize}
+  \item \textbf{Shampoo}：$L_t = \sum_s G_s G_s^\top$（行空间协方差），$R_t = \sum_s G_s^\top G_s$（列空间协方差）
+  \item \textbf{Muon}：Newton-Schulz 迭代作用于 $BB^\top$（$B$ 为动量矩阵）
+  \item \textbf{自然梯度}：Fisher 信息矩阵 $= \E[g g^\top]$
+\end{itemize}
+
+\textbf{核心联系}：$G^\top G$ 与 $GG^\top$ 的非零特征值完全相同（都等于 $\sigma_i^2$），但特征向量不同：
+\begin{itemize}
+  \item $v_i$（$G^\top G$ 的特征向量）= 梯度在\textbf{输入空间}的主方向（右奇异向量）
+  \item $u_i$（$GG^\top$ 的特征向量）= 梯度在\textbf{输出空间}的主方向（左奇异向量）
+\end{itemize}
+这就是 Shampoo 左/右因子分别捕获列/行空间相关性的数学依据。
+
+\subsection{低秩近似与 Eckart-Young 定理}
+
+\begin{theorem}[Eckart-Young-Mirsky]
+  对任意 $k\le r=\rank(G)$，秩-$k$ 矩阵的最佳 Frobenius 范数近似由截断 SVD 给出：
+  \begin{equation}
+    \argmin_{\rank(\hat G)\le k} \norm{G-\hat G}_F = \sum_{i=1}^k \sigma_i u_i v_i^\top,
+  \end{equation}
+  且最小误差为 $\sqrt{\sum_{i=k+1}^r \sigma_i^2}$。
+\end{theorem}
+
+\textbf{优化中的含义}：如果梯度矩阵的奇异值快速衰减（$\sigma_1\gg\sigma_2\gg\cdots$），则梯度是\textbf{近似低秩}的。
+这是 Muon 设计者的关键观察——Transformer 梯度确实是近似低秩的，所以正交化（将所有 $\sigma_i$ 置 1）能显著提升小奇异值方向的更新。
+
+% ===================================================================
+\section{矩阵范数}
+% ===================================================================
+
+\subsection{范数的公理化定义}
+
+\begin{definition}[向量范数]
+  $\R^n$ 上的范数 $\norm{\cdot}$ 是一个函数 $\R^n\to\R_{\ge0}$，满足：
+  \begin{enumerate}[label=(\arabic*)]
+    \item \textbf{正定性}：$\norm{x}\ge0$，且 $\norm{x}=0\iff x=0$
+    \item \textbf{齐次性}：$\norm{\alpha x}=|\alpha|\,\norm{x}$
+    \item \textbf{三角不等式}：$\norm{x+y}\le\norm{x}+\norm{y}$
+  \end{enumerate}
+\end{definition}
+
+\textbf{$\ell_p$ 范数}（$p\ge1$）：
+\[
+  \norm{x}_p = \left(\sum_{i=1}^n |x_i|^p\right)^{1/p}.
+\]
+常用特例：$\ell_1$（曼哈顿距离）、$\ell_2$（欧氏距离）、$\ell_\infty=\max_i|x_i|$（Chebyshev）。
+
+\subsection{矩阵范数：三类重要范数}
+
+矩阵范数比向量范数更复杂，因为有多种合理的定义方式。
+
+\begin{definition}[Frobenius 范数]
+  \begin{equation}\label{eq:frob}
+    \norm{G}_F = \sqrt{\sum_{i=1}^m\sum_{j=1}^n G_{ij}^2}
+    = \sqrt{\tr(G^\top G)}
+    = \sqrt{\sum_{i=1}^{\min(m,n)}\sigma_i^2}.
+  \end{equation}
+\end{definition}
+
+Frobenius 范数相当于将矩阵视为 $mn$ 维向量后的 $\ell_2$ 范数。
+它是\textbf{所有矩阵范数中最容易计算}的（不需要分解，直接平方和开根）。
+
+\vspace{0.3cm}
+
+\begin{definition}[谱范数 / 算子范数]
+  \begin{equation}\label{eq:spectral-norm}
+    \norm{G}_{op} = \norm{G}_2 = \max_{x\neq0}\frac{\norm{Gx}_2}{\norm{x}_2}
+    = \sigma_{\max}(G).
+  \end{equation}
+\end{definition}
+
+谱范数是矩阵作为线性算子的\textbf{最大放大倍数}——输入空间中单位球被拉伸的最大因子。
+它由最大奇异值给出。谱范数在优化中极为重要：$L$-光滑常数 $L$ 本质上是 Hessian 的谱范数上界。
+
+\vspace{0.3cm}
+
+\begin{definition}[核范数 / 迹范数]
+  \begin{equation}\label{eq:nuclear}
+    \norm{G}_* = \sum_{i=1}^{\min(m,n)} \sigma_i(G) = \tr\!\left(\sqrt{G^\top G}\right).
+  \end{equation}
+\end{definition}
+
+核范数是所有奇异值之和。它是\textbf{谱范数的对偶范数}（见后文），在低秩恢复和 Muon 的分析中起关键作用。
+
+\subsection{三类范数的关系不等式}
+
+\begin{theorem}[矩阵范数之间的基本不等式]\label{thm:norm-ineq}
+  对任意 $G\in\R^{m\times n}$：
+  \begin{enumerate}[label=(\roman*)]
+    \item $\norm{G}_{op} \le \norm{G}_F \le \sqrt{r}\,\norm{G}_{op}$（$r=\rank(G)$）
+    \item $\norm{G}_F \le \norm{G}_* \le \sqrt{r}\,\norm{G}_F$
+    \item $\ip{G}{H} \le \norm{G}_{op}\,\norm{H}_*$（广义 Hölder 不等式，$\ip{G}{H}=\tr(G^\top H)$）
+  \end{enumerate}
+\end{theorem}
+
+\begin{proof}
+  \textbf{(i)}：设奇异值为 $\sigma_1\ge\cdots\ge\sigma_r>0$。
+  $\norm{G}_{op}=\sigma_1$，$\norm{G}_F=\sqrt{\sum\sigma_i^2}$。
+  显然 $\sigma_1\le\sqrt{\sum\sigma_i^2}\le\sqrt{r\sigma_1^2}=\sqrt{r}\sigma_1$。
+
+  \textbf{(ii)}：$\norm{G}_F^2=\sum\sigma_i^2\le(\sum\sigma_i)^2=\norm{G}_*^2$（Cauchy-Schwarz 或 Jensen）。
+  另一边，$\norm{G}_* = \sum\sigma_i\cdot1 \le \sqrt{\sum\sigma_i^2}\sqrt{r} = \sqrt{r}\norm{G}_F$。
+
+  \textbf{(iii)}：由 von Neumann 迹不等式：$\tr(G^\top H)\le\sum_i\sigma_i(G)\sigma_i(H)$（奇异值按相同顺序排列）。
+  于是 $\tr(G^\top H)\le\sigma_{\max}(G)\sum_i\sigma_i(H)=\norm{G}_{op}\norm{H}_*$。
+\end{proof}
+
+\begin{remark}[关系不等式的含义]
+  \begin{itemize}
+    \item $\norm{G}_{op}\approx\norm{G}_F$ 当梯度\textbf{低秩}（$\sigma_1$ 主导）——此时 Frobenius 和算子范数接近
+    \item $\norm{G}_{op}\ll\norm{G}_F$ 当梯度\textbf{高秩}（奇异值均匀）——此时 Frobenius 远大于算子范数
+    \item 核范数和 Frobenius 范数的差距反映奇异值分布的``重尾''程度
+  \end{itemize}
+  这些关系在 ASGO 和 Muon 的收敛界中直接出现。
+\end{remark}
+
+\subsection{对偶范数与最陡下降}
+
+\begin{definition}[对偶范数]
+  范数 $\norm{\cdot}$ 的\textbf{对偶范数}定义为：
+  \begin{equation}
+    \norm{y}_* = \sup_{\norm{x}\le 1} \ip{x}{y}.
+  \end{equation}
+\end{definition}
+
+\textbf{对偶范数的核心作用}：在 $\norm{\cdot}$ 约束下找最陡方向等价于在对偶范数单位球上最大化内积。
+
+\begin{theorem}[几对重要的对偶关系]
+  \begin{center}
+  \begin{tabular}{lll}
+  \toprule
+  原始范数 $\norm{\cdot}$ & 对偶范数 $\norm{\cdot}_*$ & 优化器对应 \\
+  \midrule
+  $\ell_2$（欧氏） & $\ell_2$（自对偶） & SGD / GD \\
+  $\ell_\infty$ & $\ell_1$ & SignSGD \\
+  $\|\cdot\|_F$（Frobenius） & $\|\cdot\|_F$（自对偶） & SGD（矩阵形式） \\
+  $\|\cdot\|_{op}$（谱范数） & $\|\cdot\|_*$（核范数） & Muon / PolarGrad \\
+  \bottomrule
+  \end{tabular}
+  \end{center}
+\end{theorem}
+
+\begin{proof}[谱范数 $\leftrightarrow$ 核范数对偶性的证明]
+  需证明：$\sup_{\|X\|_{op}\le1}\langle G,X\rangle = \|G\|_*$。
+
+  设 $G=U\Sigma V^\top$。取 $X=UV^\top$（即 $\sgn(G)$），则 $\|X\|_{op}=1$ 且
+  \[
+    \langle G, X\rangle = \tr(V\Sigma U^\top U V^\top) = \tr(\Sigma) = \sum_i\sigma_i = \|G\|_*.
+  \]
+  由广义 Hölder 不等式，$\langle G,X\rangle\le\|G\|_*\|X\|_{op}\le\|G\|_*$。因此上界可达。
+\end{proof}
+
+\textbf{这个证明直接给出了 Muon 的理论基础}：在谱范数球约束下，$-g_t$ 的最陡方向正是 $-\sgn(G_t) = -UV^\top$。
+
+\subsection{矩阵范数的次梯度（Subgradient）}
+
+在非光滑优化中，核范数的次梯度与 SVD 密切相关：
+
+\begin{proposition}[核范数的次梯度]
+  设 $G=U\Sigma V^\top$。则 $\partial\|G\|_* = \{UV^\top + W: \|W\|_{op}\le1,\;U^\top W=0,\;WV=0\}$。
+\end{proposition}
+
+这意味着 $UV^\top$（即 $\sgn(G)$）是核范数在 $G$ 处的\textbf{最小范数次梯度}——
+这是为什么许多矩阵恢复算法（如矩阵补全）使用软阈值 SVD 作为近端算子的原因。
+
+% ===================================================================
+\section{极分解 (Polar Decomposition)}
+% ===================================================================
+
+\subsection{极分解的定义与存在性}
+
+\begin{definition}[极分解]
+  对任意实方阵 $G\in\R^{n\times n}$，存在唯一的\textbf{极分解}：
+  \begin{equation}\label{eq:polar}
+    G = U P,
+  \end{equation}
+  其中 $U$ 是正交矩阵（$U^\top U=I$），$P$ 是正半定对称矩阵（$P\succeq0$）。
+\end{definition}
+
+\begin{proof}[从 SVD 构造极分解]
+  设 SVD 为 $G=U_{\text{SVD}}\Sigma V_{\text{SVD}}^\top$。定义：
+  \[
+    U = U_{\text{SVD}} V_{\text{SVD}}^\top,\qquad
+    P = V_{\text{SVD}} \Sigma V_{\text{SVD}}^\top.
+  \]
+  验证：$U^\top U = V_{\text{SVD}}U_{\text{SVD}}^\top U_{\text{SVD}}V_{\text{SVD}}^\top = I$，且 $P\succeq0$。
+  乘积 $UP = U_{\text{SVD}}V_{\text{SVD}}^\top V_{\text{SVD}}\Sigma V_{\text{SVD}}^\top = U_{\text{SVD}}\Sigma V_{\text{SVD}}^\top = G$。
+\end{proof}
+
+\textbf{极分解与复数的类比}：复数 $z=re^{i\theta}$ 的极坐标表示。对应关系：
+\[
+  \underbrace{G}_{\text{矩阵}} = \underbrace{U}_{\text{“相位” }e^{i\theta}} \cdot \underbrace{P}_{\text{“模长” }r}.
+\]
+正交因子 $U$ 代表``方向''（旋转/反射），正半定因子 $P$ 代表``尺度''（沿各方向的拉伸）。
+
+\subsection{极分解与 SVD 的关系辨析}
+
+\begin{center}
+\begin{tabular}{p{2.5cm}p{4.5cm}p{4.5cm}}
+\toprule
+ & \textbf{SVD} & \textbf{极分解} \\
+\midrule
+分解形式 & $G = U_{\text{SVD}}\,\Sigma\, V_{\text{SVD}}^\top$ & $G = U_{\text{polar}}\, P$ \\
+因子个数 & 3个（左奇异向量 + 奇异值 + 右奇异向量） & 2个（正交 + 正半定） \\
+正交因子 & $U_{\text{SVD}},V_{\text{SVD}}$ 分别是 $m\times m,n\times n$ & $U_{\text{polar}}$ 是 $m\times n$ \\
+尺度因子 & $\Sigma$ 是对角矩阵 & $P$ 是正半定对称矩阵 \\
+适用性 & 任意矩形矩阵 & 方阵（或可推广到矩形） \\
+关系 & $\to$ 极分解的 $U=U_{\text{SVD}}V_{\text{SVD}}^\top$，$P=V_{\text{SVD}}\Sigma V_{\text{SVD}}^\top$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{易错点}：SVD 的 $U$ 和极分解的 $U$ 是\textbf{不同}的矩阵！SVD 的 $U$ 是左奇异向量组；极分解的 $U$ 是 $U_{\text{SVD}}V_{\text{SVD}}^\top$。
+
+\subsection{极分解在优化中的应用}
+
+极分解在 Muon/PolarGrad 中至关重要：
+
+\begin{itemize}
+  \item \textbf{Muon}：提取动量矩阵的极分解正交因子 $U$（丢弃 $P$），即 $\sgn(B_t)$
+  \item \textbf{PolarGrad}：保留 $U$ 作为方向，对 $P$ 应用谱函数 $\phi(P)$ 来调节各方向的步长
+  \item \textbf{数值计算}：QDWH（QR-based Dynamically Weighted Halley）和 ZOLO-PD 算法比 Newton-Schulz 更稳定，不需调参
+\end{itemize}
+
+\begin{example}[$\sgn$ 函数与极分解的联系]
+  矩阵符号函数定义为：
+  \[
+    \sgn(G) = \argmin_{\|O\|_{op}\le 1} \|O-G\|_F = U_{\text{polar}} = U_{\text{SVD}}V_{\text{SVD}}^\top.
+  \]
+  即 $\sgn(G)$ 是极分解的正交因子，也是谱范数单位球上离 $G$ 最近的点。
+\end{example}
+
+% ===================================================================
+\section{矩阵函数 (Matrix Functions)}
+% ===================================================================
+
+\subsection{定义：从标量函数到矩阵函数}
+
+\begin{definition}[对称矩阵的函数]
+  设 $A=Q\Lambda Q^\top$ 为实对称矩阵的谱分解（$\Lambda=\diag(\lambda_1,\ldots,\lambda_n)$），$\phi:\R\to\R$ 为标量函数且在 $\{\lambda_i\}$ 上有定义。则：
+  \begin{equation}\label{eq:matrix-func}
+    \phi(A) := Q\,\diag(\phi(\lambda_1),\ldots,\phi(\lambda_n))\,Q^\top.
+  \end{equation}
+\end{definition}
+
+\textbf{这不是逐元素操作！} $\phi(A)\neq[\phi(a_{ij})]$。矩阵函数对\textbf{特征值}作用，保持\textbf{特征向量}不变。
+
+\begin{example}[常用的矩阵函数]
+  \begin{itemize}
+    \item $A^{-1}$：$\phi(x)=1/x$（要求所有 $\lambda_i\neq0$）
+    \item $A^{-1/2}$：$\phi(x)=1/\sqrt{x}$（要求所有 $\lambda_i>0$，实践中通过 $A+\eps I$ 保证）
+    \item $A^{1/4}$：$\phi(x)=x^{1/4}$（Shampoo 的左/右因子）
+    \item $\exp(A)$：$\phi(x)=e^x$
+    \item $\log(A)$：$\phi(x)=\log x$
+  \end{itemize}
+\end{example}
+
+\subsection{为什么不能对非对称矩阵随意做矩阵函数？}
+
+对非对称矩阵 $G$（如梯度矩阵），没有谱分解（特征向量不正交，甚至可能不可对角化）。
+因此 $\phi(G)$ 在一般情况下\textbf{没有标准定义}。
+
+\vspace{0.2cm}
+\textbf{两种推广方式}：
+
+\begin{enumerate}[label=(\arabic*)]
+  \item \textbf{通过 SVD}：定义 $\phi_{\text{sing}}(G) = U\,\diag(\phi(\sigma_1),\ldots,\phi(\sigma_r))\,V^\top$。
+  即对\textbf{奇异值}（而非特征值）作用 $\phi$。\\
+  \textbf{应用}：$\sgn(G)=\phi_{\text{sing}}(G)$，其中 $\phi(\sigma)\equiv1$——所有非零奇异值置 1。
+
+  \item \textbf{通过极分解}：先做极分解 $G=UP$，然后对正半定因子 $P$ 做矩阵函数（因为 $P$ 对称！）：
+  $\phi(G)_{\text{polar}} = U\cdot\phi(P)$。\\
+  \textbf{应用}：PolarGrad 的更新方向即 $U\cdot\phi(P)$。
+\end{enumerate}
+
+\begin{remark}
+  对于对称矩阵，$\phi(A)$ 有良定义。对于非对称矩阵，需要先借助 SVD 或极分解将其``对称化''。
+  这就是为什么 Shampoo 维护的是对称矩阵 $L_t,R_t$（保证可对角化），而 Muon/PolarGrad 需要 SVD/极分解来处理非对称梯度 $G_t$。
+\end{remark}
+
+\subsection{矩阵函数的性质与计算}
+
+\begin{property}[矩阵函数的基本性质]
+  \begin{enumerate}[label=(\arabic*)]
+    \item $\phi(A)$ 与 $A$ 共享相同的特征向量
+    \item 若 $A,B$ 可交换（$AB=BA$），则 $\phi(A)\psi(B)=\psi(B)\phi(A)$
+    \item 一般 $\phi(A+B)\neq\phi(A)+\phi(B)$（非线性！）
+    \item $\phi(P^\top A P) = P^\top\phi(A)P$ 仅当 $P$ 正交（这来自谱映射的定义）
+  \end{enumerate}
+\end{property}
+
+\textbf{计算矩阵函数的方法}：
+\begin{enumerate}[label=(\arabic*)]
+  \item \textbf{特征分解法}：$\phi(A)=Q\phi(\Lambda)Q^\top$。最精确，但 $\mathcal{O}(n^3)$。
+  \item \textbf{Newton-Schulz 迭代}：用于 $\phi(x)=x^{-1/2}$ 或 $\phi(x)=\sgn(x)$。仅需矩阵乘法，GPU 友好。
+  \item \textbf{多项式/有理逼近}：适用于特定函数（如 $\exp$ 的 Pad\'e 逼近）。
+\end{enumerate}
+
+\subsection{Newton-Schulz 迭代的详细分析}
+
+\textbf{目标}：计算 $A^{-1/2}$ 或 $\sgn(A)$ 而不做特征分解。
+
+\vspace{0.2cm}
+\textbf{逆平方根迭代}（用于 Shampoo 的高效实现）：
+\[
+  X_{k+1} = \frac{3}{2}X_k - \frac{1}{2}X_k^3 A,\qquad X_0 = \frac{1}{\norm{A}_F}A.
+\]
+
+\vspace{0.2cm}
+\textbf{矩阵符号函数迭代}（用于 Muon）：
+\[
+  X_{k+1} = a X_k + b X_k X_k^\top X_k + c (X_k X_k^\top)^2 X_k,
+\]
+其中系数 $(a,b,c) = (3.4445, -4.7750, 2.0315)$ 是精心设计的 5 阶多项式，使得 $\phi_5(\sigma)\approx\sgn(\sigma)$。
+
+\vspace{0.2cm}
+\textbf{收敛性分析}（一维情形的洞见）：
+考虑 $x>0$，迭代 $x_{k+1}=\frac{3}{2}x_k-\frac{1}{2}x_k^3$。
+不动点：$x=0,\pm1$。若 $x_0\in(0,\sqrt{3})$，则 $x_k\to1$（符号函数的正半支）。
+多维分析通过特征值（或奇异值）解耦：每个 mode 独立地按一维迭代演化。
+
+% ===================================================================
+\section{Kronecker 积——完整版}
+% ===================================================================
+
+\subsection{定义与基本性质}
+
+\begin{definition}[Kronecker 积]
+  对 $A\in\R^{m\times n}$，$B\in\R^{p\times q}$，定义：
+  \[
+    A\otimes B = \begin{pmatrix}
+      a_{11}B & a_{12}B & \cdots & a_{1n}B \\
+      a_{21}B & a_{22}B & \cdots & a_{2n}B \\
+      \vdots & \vdots & \ddots & \vdots \\
+      a_{m1}B & a_{m2}B & \cdots & a_{mn}B
+    \end{pmatrix} \in \R^{mp\times nq}.
+  \]
+\end{definition}
+
+每个标量 $a_{ij}$ 被替换为 $a_{ij}B$ 块。$(A\otimes B)_{(i-1)p+k,(j-1)q+\ell} = a_{ij}b_{k\ell}$。
+
+\subsection{核心性质（完整证明）}
+
+\begin{property}[混合积]\label{prop:mixed}
+  \[
+    (A\otimes B)(C\otimes D) = AC \otimes BD,
+  \]
+  前提：$A$ 与 $C$、$B$ 与 $D$ 的维度分别匹配。
+\end{property}
+
+\begin{proof}
+  需逐元素验证。设 $A$ 为 $m\times n$，$C$ 为 $n\times r$；$B$ 为 $p\times q$，$D$ 为 $q\times s$。
+  左边第 $(i-1)p+k,(j-1)r+\ell$ 个元素为：
+  \[
+    \sum_{t=1}^n\sum_{u=1}^q a_{it}b_{ku} \cdot c_{tj}d_{u\ell}
+    = \left(\sum_{t=1}^n a_{it}c_{tj}\right)\left(\sum_{u=1}^q b_{ku}d_{u\ell}\right)
+    = (AC)_{ij}(BD)_{k\ell}.
+  \]
+  这正是 $AC\otimes BD$ 的对应元素。
+\end{proof}
+
+\begin{property}[逆]
+  若 $A,B$ 可逆，则：
+  \begin{equation}\label{eq:kron-inv}
+    (A\otimes B)^{-1} = A^{-1}\otimes B^{-1}.
+  \end{equation}
+\end{property}
+
+\begin{proof}
+  由性质~\ref{prop:mixed}：$(A\otimes B)(A^{-1}\otimes B^{-1}) = AA^{-1}\otimes BB^{-1} = I\otimes I = I$。
+\end{proof}
+
+\begin{property}[矩阵函数（幂）]
+  对 $A\succ0,B\succ0$ 和任意 $\alpha\in\R$：
+  \begin{equation}\label{eq:kron-pow}
+    (A\otimes B)^\alpha = A^\alpha \otimes B^\alpha.
+  \end{equation}
+\end{property}
+
+\begin{proof}[完整证明]
+  设 $A=Q_A\Lambda_A Q_A^\top$，$B=Q_B\Lambda_B Q_B^\top$。则：
+  \[
+    A\otimes B = (Q_A\Lambda_A Q_A^\top)\otimes(Q_B\Lambda_B Q_B^\top)
+    = (Q_A\otimes Q_B)(\Lambda_A\otimes\Lambda_B)(Q_A\otimes Q_B)^\top.
+  \]
+  （最后一步使用了 $(X_1 Y_1)\otimes(X_2 Y_2)=(X_1\otimes X_2)(Y_1\otimes Y_2)$，这是混合积的推论。）
+  注意 $Q_A\otimes Q_B$ 是正交矩阵（$(Q_A\otimes Q_B)^\top(Q_A\otimes Q_B)=Q_A^\top Q_A\otimes Q_B^\top Q_B=I\otimes I=I$）。
+  且 $\Lambda_A\otimes\Lambda_B$ 是对角矩阵（Kronecker 积保留对角度）。
+
+  因此上式就是 $A\otimes B$ 的谱分解！由矩阵函数的定义：
+  \[
+    (A\otimes B)^\alpha = (Q_A\otimes Q_B)(\Lambda_A\otimes\Lambda_B)^\alpha(Q_A\otimes Q_B)^\top.
+  \]
+  而对角矩阵的 $\alpha$ 次幂就是逐元素操作：
+  $(\Lambda_A\otimes\Lambda_B)^\alpha = \Lambda_A^\alpha\otimes\Lambda_B^\alpha$。
+  代回即得 $(A\otimes B)^\alpha = (Q_A\Lambda_A^\alpha Q_A^\top)\otimes(Q_B\Lambda_B^\alpha Q_B^\top) = A^\alpha\otimes B^\alpha$。
+\end{proof}
+
+\textbf{这是 Shampoo 使用 $L^{-1/4}\otimes R^{-1/4}$ 而不必直接处理 $mn\times mn$ 矩阵的根本原因。}
+
+\begin{property}[向量化]\label{prop:vec}
+  \begin{equation}\label{eq:vec-kron}
+    \vect(AXB) = (B^\top\otimes A)\,\vect(X),
+  \end{equation}
+  其中 $\vect(\cdot)$ 将矩阵按列堆叠为向量。
+\end{property}
+
+\begin{proof}
+  记 $X=[x_1,\ldots,x_p]$ 按列分块，$B=(b_{jk})$。则 $AXB = [\sum_{j=1}^p b_{j1}Ax_j,\;\ldots,\;\sum_{j=1}^p b_{jq}Ax_j]$。
+  向量化后：
+  \[
+    \vect(AXB) = \begin{pmatrix}
+      \sum_j b_{j1}Ax_j \\
+      \vdots \\
+      \sum_j b_{jq}Ax_j
+    \end{pmatrix}
+    = \begin{pmatrix}
+      b_{11}A & \cdots & b_{p1}A \\
+      \vdots & \ddots & \vdots \\
+      b_{1q}A & \cdots & b_{pq}A
+    \end{pmatrix}
+    \begin{pmatrix} x_1 \\ \vdots \\ x_p \end{pmatrix}
+    = (B^\top\otimes A)\vect(X).
+  \]
+  注意分块矩阵 $(b_{kj}A)$ 的 $(k,j)$ 块是 $b_{kj}A$，从 Kronecker 积定义看，这恰好是 $B^\top\otimes A$（$B^\top$ 的第 $k$ 行第 $j$ 列是 $b_{jk}$，不对——应仔细验证：$B^\top$ 的第 $k$ 行第 $j$ 列 = $B$ 的第 $j$ 行第 $k$ 列 = $b_{jk}$，确实与上述分块一致）。
+\end{proof}
+
+\subsection{Shampoo 的 Kronecker 不等式}
+
+Shampoo 收敛分析的核心是以下矩阵不等式（Loewner 序下）：
+
+\begin{lemma}[Shampoo 的 Kronecker bound]\label{lem:shampoo-bound}
+  设 $G\in\R^{m\times n}$，$g=\vect(G)$，$r=\rank(G)$。则：
+  \begin{equation}\label{eq:shampoo-kron1}
+    \frac{1}{r}\,gg^\top \preceq I_m\otimes(G^\top G),
+  \end{equation}
+  \begin{equation}\label{eq:shampoo-kron2}
+    \frac{1}{r}\,gg^\top \preceq (GG^\top)\otimes I_n.
+  \end{equation}
+\end{lemma}
+
+\begin{proof}
+  利用 SVD $G=U\Sigma V^\top$（$\Sigma$ 为 $r\times r$ 对角）。则：
+  \[
+    g = \vect(G) = (V\otimes U)\vect(\Sigma).
+  \]
+  其中 $\vect(\Sigma)$ 只有前 $r$ 个对角元非零（$\sigma_1,\ldots,\sigma_r$）。
+  利用这个表示和 Kronecker 积的性质，可推导出上述不等式。
+
+  直观：$gg^\top$ 在 Loewner 序下被 Kronecker 结构的上界控制——
+  这保证了 Shampoo 使用的 Kronecker 预条件器不会比真实的 full-matrix 预条件器更差（最多差一个因子 $\sqrt{r}$）。
+\end{proof}
+
+% ===================================================================
+\section{Loewner 偏序与矩阵不等式}
+% ===================================================================
+
+\subsection{定义与基本性质}
+
+\begin{definition}[Loewner 偏序]
+  对对称矩阵 $A,B\in\R^{n\times n}$，定义：
+  \[
+    A\preceq B \iff B-A \succeq 0 \iff \text{所有特征值 } \lambda_i(B-A)\ge0.
+  \]
+\end{definition}
+
+\begin{property}[Loewner 序的基本性质]
+  \begin{enumerate}[label=(\arabic*)]
+    \item \textbf{保序}：若 $A\preceq B$，则对任意 $X$，$X^\top AX\preceq X^\top BX$。
+    \item \textbf{逆序反转}：若 $0\prec A\preceq B$，则 $B^{-1}\preceq A^{-1}$。
+    \item \textbf{单调矩阵函数}：若 $\phi$ 是算子单调的，则 $A\preceq B\implies\phi(A)\preceq\phi(B)$。
+    \item \textbf{Kronecker 保序}：若 $0\preceq A\preceq B$ 且 $0\preceq C\preceq D$，则 $A\otimes C\preceq B\otimes D$。
+  \end{enumerate}
+\end{property}
+
+\begin{remark}[算子单调性]
+  函数 $\phi(x)=x^\alpha$ 对 $\alpha\in[0,1]$ 是算子单调的（Löwner-Heinz 定理）。
+  这意味着 $A\preceq B\succ0 \implies A^{1/2}\preceq B^{1/2}$，但 $A^2\preceq B^2$ 不保证！
+  在 Shampoo 中使用 $-1/4$ 次幂（$\alpha=-1/4<0$）时，序方向反转。
+\end{remark}
+
+\subsection{迹不等式}
+
+\begin{theorem}[von Neumann 迹不等式]
+  对任意 $A,B\in\R^{m\times n}$，设 $\sigma_i(A),\sigma_i(B)$ 按降序排列：
+  \begin{equation}
+    \tr(A^\top B) \le \sum_{i=1}^{\min(m,n)} \sigma_i(A)\,\sigma_i(B).
+  \end{equation}
+\end{theorem}
+
+这是谱范数—核范数对偶性的基础，也用于 ASGO 和 Muon 的收敛证明中。
+
+% ===================================================================
+\section{从线性代数到优化器：整合与图示}
+% ===================================================================
+
+\subsection{知识地图：每个优化器依赖的线性代数工具}
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{优化器} & \textbf{核心操作} & \textbf{依赖的线性代数工具} \\
+\midrule
+SGD & $-\eta g$ & 向量 $\ell_2$ 范数 \\
+Adam & $-\eta \frac{m}{\sqrt{v}+\eps}$ & 对角矩阵求逆、特征值（隐式） \\
+AdamW & $-\eta\frac{m}{\sqrt{v}+\eps} - \eta\lambda w$ & 同上 \\
+Shampoo & $-\eta L^{-1/4}GR^{-1/4}$ &
+  \parbox{6cm}{\vspace{-0.3cm}\begin{itemize}
+    \item 对称矩阵的谱分解
+    \item Kronecker 积的性质
+    \item 矩阵函数的定义 ($A^{-1/4}$)
+    \item Loewner 序的不等式
+  \end{itemize}} \\
+SOAP & $Q_L(\frac{\tilde m}{\sqrt{\tilde v}})Q_R^\top$ &
+  \parbox{6cm}{\vspace{-0.3cm}\begin{itemize}
+    \item 特征基的构造 ($Q_L,Q_R$)
+    \item 基变换（正交变换）
+    \item Adam 在旋转坐标中的不变性分析
+  \end{itemize}} \\
+Muon & $-\eta\,\sgn(B_t)$ &
+  \parbox{6cm}{\vspace{-0.3cm}\begin{itemize}
+    \item SVD / 极分解
+    \item 矩阵符号函数 $\sgn(G)=UV^\top$
+    \item Newton-Schulz 迭代
+    \item 谱范数与核范数的对偶性
+  \end{itemize}} \\
+PolarGrad & $-\eta\,U\phi(P)$ &
+  \parbox{6cm}{\vspace{-0.3cm}\begin{itemize}
+    \item 极分解 $G=UP$
+    \item 矩阵函数 $\phi(P)$
+    \item 谱范数最陡下降
+  \end{itemize}} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{为什么谱范数约束产生 Muon：完整推导}
+
+\begin{theorem}[谱范数下的最陡下降等价于 Muon]
+  求解
+  \[
+    \min_{\Delta} \left\{\langle G, \Delta\rangle + \frac{1}{2\eta}\|\Delta\|_{op}^2\right\},
+  \]
+  得到的最优解为 $\Delta^\star = -\eta\cdot\|G\|_*\cdot\sgn(G)$。
+  忽略标量因子 $\|G\|_*$（吸收进步长中），方向即为 $-\sgn(G) = -UV^\top$。
+\end{theorem}
+
+\begin{proof}
+  将 $\Delta$ 分解为 $\Delta=c\cdot D$，其中 $\|D\|_{op}=1$，$c=\|\Delta\|_{op}$：
+  \[
+    \min_{c\ge0,\;\|D\|_{op}=1} c\cdot\langle G,D\rangle + \frac{c^2}{2\eta}.
+  \]
+  固定 $D$，对 $c$ 求导：$\langle G,D\rangle + c/\eta = 0 \implies c = -\eta\langle G,D\rangle$。
+  代入目标函数得：$-\frac{\eta}{2}\langle G,D\rangle^2$。
+  因此需最大化 $\langle G,D\rangle$ 在 $\|D\|_{op}\le1$ 下。
+
+  由谱范数-核范数对偶性：$\max_{\|D\|_{op}\le1}\langle G,D\rangle = \|G\|_*$，
+  最优 $D^\star = -\sgn(G) = -UV^\top$（取负号是因为最小化而非最大化）。
+  因此 $c^\star = \eta\|G\|_*$，$\Delta^\star = -\eta\|G\|_*\cdot\sgn(G)$。
+\end{proof}
+
+\textbf{Muon 的做法}：丢弃 $\|G\|_*$（核范数）因子，只用 $-\sgn(G)$ 作为更新方向。
+这等价于\textbf{谱归一化的最陡下降}（spectrally-normalized steepest descent）。
+
+\subsection{为什么 Adam 怕旋转：对角预条件不是坐标不变的}
+
+考虑对参数做正交变换 $\tilde\theta = Q^\top\theta$，$Q$ 为正交矩阵。
+
+在 $\tilde\theta$ 空间中运行 Adam，梯度变为 $\tilde g_t = Q^\top g_t$。
+
+Adam 的逐坐标二阶矩：
+\[
+  \tilde v_t = \beta_2\tilde v_{t-1} + (1-\beta_2)\underbrace{(Q^\top g_t)^{\odot2}}_{\neq Q^\top(g_t^{\odot2})}.
+\]
+这里 $(Q^\top g_t)^{\odot2}$ 是先旋转变换再逐元素平方，与先平方再旋转 $Q^\top(g_t^{\odot2})$ 完全不同。
+因此 $\tilde v_t \neq Q^\top v_t$，Adam 的预条件器 $\diag(\tilde v_t)^{-1/2}$ 与 $\diag(v_t)^{-1/2}$ 之间不是简单的坐标变换。
+
+而 Muon 的 $\sgn(G)$ 在正交变换下是\textbf{协变的}：
+\[
+  \sgn(Q_L^\top G Q_R) = Q_L^\top \sgn(G) Q_R,
+\]
+这就是为什么 Muon 不像 Adam 那样怕旋转。
+
+% ===================================================================
+\section{练习}
+% ===================================================================
+
+\subsection*{理论练习（带提示）}
+
+\begin{enumerate}
+  \item \textbf{特征值的连续性}：证明实对称矩阵的特征值连续地依赖于矩阵元素。（提示：利用特征多项式系数与矩阵元素的连续性，或使用 Weyl 不等式。）
+
+  \item \textbf{SVD 的唯一性}：证明若奇异值互不相同（$\sigma_1>\sigma_2>\cdots>\sigma_r$），则左右奇异向量在符号上唯一确定。若有重奇异值，奇异向量的选择有多少自由度？
+
+  \item \textbf{核范数对偶性的验证}：对 $2\times2$ 矩阵 $G$，直接验证 $\max_{\|X\|_{op}\le1}\langle G,X\rangle = \|G\|_*$。分别计算两边并确认相等。
+
+  \item \textbf{Kronecker 积的秩}：证明 $\rank(A\otimes B) = \rank(A)\cdot\rank(B)$。（提示：利用 Kronecker 积的 SVD 表示。）
+
+  \item \textbf{Newton-Schulz 的收敛阶}：分析一维迭代 $x_{k+1}=\frac32x_k-\frac12x_k^3$ 在 $x=1$ 附近的收敛速度。证明它是二阶收敛的。（提示：泰勒展开 $x_{k+1}-1$ 关于 $x_k-1$。）
+
+  \item \textbf{Shampoo 不等式的特殊情形}：设 $G=uv^\top$（秩-1 矩阵）。直接验证 $gg^\top = (v\otimes u)(v\otimes u)^\top$，并证明它在 Loewner 序下满足不等式~\eqref{eq:shampoo-kron1}。
+\end{enumerate}
+
+\subsection*{工程练习}
+
+\begin{enumerate}
+  \item \textbf{实现 SVD 的幂迭代}：用幂迭代法（power iteration）计算随机矩阵的最大奇异值和对应的奇异向量。将其推广为同时求前 $k$ 个奇异向量的子空间迭代。
+
+  \item \textbf{比较矩阵根的计算方法}：对随机正定矩阵（大小 $100\times100$），分别用 (a) 特征分解、(b) Newton-Schulz 迭代（5 次迭代）、(c) Newton-Schulz（10 次迭代）计算 $A^{-1/4}$。记录精度（以特征分解为 ground truth）和时间。
+
+  \item \textbf{可视化 SVD 的几何}：随机生成 $2\times2$ 矩阵 $G$，画出 $\R^2$ 中的单位圆及其在 $G$ 下的像（椭圆）。在图上标注左/右奇异向量的方向和奇异值的数值。
+
+  \item \textbf{实现 Newton-Schulz 的 Muon 版}：对随机矩阵 $M$，实现 Muon 中使用的 5 次 Newton-Schulz 迭代（含归一化和转置步骤）。与 SVD 计算的 $\sgn(M)$ 比较精度。
+\end{enumerate}
+
+% ===================================================================
+\section{参考文献与进一步阅读}
+% ===================================================================
+
+\begin{itemize}
+  \item \textbf{张贤科}，《高等线性代数》，清华大学出版社。国内线性代数高级教材的标杆，涵盖 Jordan 标准形、矩阵函数、广义逆等。
+  \item \textbf{Golub \& Van Loan}, \textit{Matrix Computations}, 4th ed., Johns Hopkins, 2013. 数值线性代数的圣经，SVD 和 QR 迭代的权威来源。
+  \item \textbf{Horn \& Johnson}, \textit{Matrix Analysis}, 2nd ed., Cambridge, 2013. 矩阵分析的标准参考书，涵盖所有范数、Loewner 序、矩阵函数。
+  \item \textbf{Horn \& Johnson}, \textit{Topics in Matrix Analysis}, Cambridge, 1991. 续卷，深入 Kronecker 积、Hadamard 积等专题。
+  \item \textbf{Bhatia}, \textit{Matrix Analysis}, Springer, 1997. 以算子单调函数和矩阵不等式为核心，适合理论深化。
+  \item \textbf{Higham}, \textit{Functions of Matrices: Theory and Computation}, SIAM, 2008. 矩阵函数的专门著作，包括 Newton-Schulz 和极分解的数值算法。
+  \item \textbf{Boyd \& Vandenberghe}, \textit{Convex Optimization}, Cambridge, 2004. \S A.5（矩阵范数）、\S A.6（矩阵函数）、\S A.7（矩阵微积分）的附录。
+\end{itemize}
+
+\end{document}

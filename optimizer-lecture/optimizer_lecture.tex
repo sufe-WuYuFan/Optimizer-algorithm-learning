@@ -1,0 +1,1288 @@
+\documentclass[aspectratio=169,10pt]{ctexbeamer}
+
+\usetheme{Madrid}
+\usecolortheme{seahorse}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{caption}[numbered]
+
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{booktabs}
+\usepackage{algorithm2e}
+\usepackage{tikz}
+\usepackage{xcolor}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc}
+
+% ============ Math Notation ============
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\vect}{\operatorname{vec}}
+\newcommand{\eps}{\varepsilon}
+\newcommand{\grad}{\nabla}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2 \right\rangle}
+\newcommand{\Id}{I}
+\newcommand{\calL}{\mathcal{L}}
+\newcommand{\calF}{\mathcal{F}}
+\newcommand{\calO}{\mathcal{O}}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+
+\title[Adam, Shampoo, SOAP]{从 Adam 到 Shampoo 与 SOAP：\\[0.3em] 一阶优化器的几何直觉、数学骨架与科研入门}
+\subtitle{面向已掌握梯度下降与简单加速算法的学习路线}
+\author{基于 Codex 初稿深度扩展}
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+% ======================================================================
+\section{概览与框架}
+% ======================================================================
+
+\begin{frame}{学习目标}
+  \begin{itemize}
+    \item 把 Adam、Shampoo、SOAP 放到同一个统一框架：\textbf{带记忆的预条件一阶法}。
+    \item 从数学上精确理解：预条件器如何改变\textbf{优化度量}，而非仅仅调节学习率。
+    \item 清晰区分三个递进层级：
+    \begin{enumerate}
+      \item \textbf{对角自适应}（Adam）：逐坐标独立缩放。
+      \item \textbf{矩阵/张量预条件}（Shampoo）：用 Kronecker 因子捕捉坐标相关性。
+      \item \textbf{旋转坐标中的自适应}（SOAP）：在 Shampoo 特征基中运行 Adam。
+    \end{enumerate}
+    \item 建立扎实的数学工具箱：凸分析基础、矩阵函数、Kronecker 积、regret 分析、数值线性代数。
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{总图：一阶优化器的统一骨架}
+\[
+  \boxed{\theta_{t+1}=\theta_t-\eta_t\,P_t\,m_t}
+\]
+\begin{center}
+\begin{tikzpicture}[node distance=2.0cm, >=Stealth, every node/.style={font=\small}]
+  \node[draw, rounded corners, fill=blue!8, minimum width=2.5cm, minimum height=.9cm, align=center] (g) {随机梯度\\$g_t=\grad_\theta\ell(\theta_t;\xi_t)$};
+  \node[draw, rounded corners, fill=green!8, right=of g, minimum width=2.5cm, minimum height=.9cm, align=center] (m) {方向记忆\\$m_t$ (momentum/EMA)};
+  \node[draw, rounded corners, fill=orange!10, right=of m, minimum width=2.8cm, minimum height=.9cm, align=center] (p) {预条件器\\$P_t\succ0$ (几何)};
+  \node[draw, rounded corners, fill=purple!8, right=of p, minimum width=2.2cm, minimum height=.9cm, align=center] (u) {参数更新\\$\theta_{t+1}$};
+  \draw[->] (g) -- (m);
+  \draw[->] (m) -- (p);
+  \draw[->] (p) -- (u);
+\end{tikzpicture}
+\end{center}
+三个核心设计维度：
+\begin{itemize}
+  \item \textbf{动量设计}：SGD momentum 用凸组合；Nesterov 用「前瞻」梯度。
+  \item \textbf{预条件器设计}：Adam 用 $\diag(v_t)^{-1/2}$；Shampoo 用 $R_t^{-1/4}\otimes L_t^{-1/4}$；SOAP 用特征基旋转。
+  \item \textbf{步长设计}：常数、cosine decay、warmup、层自适应等。
+\end{itemize}
+\end{frame}
+
+% ======================================================================
+\section{预条件的几何学}
+% ======================================================================
+
+\begin{frame}{回顾：梯度下降的几何意义}
+考虑无约束最小化问题 $\min_{\theta\in\R^d} f(\theta)$。
+
+\vspace{.3cm}
+\textbf{方向导数}：$f$ 在点 $\theta$ 处沿方向 $d$ 的变化率为
+\[
+  D_d f(\theta)=\lim_{t\to0^+}\frac{f(\theta+td)-f(\theta)}{t}=\ip{\grad f(\theta)}{d}.
+\]
+
+\vspace{.3cm}
+\textbf{最陡下降方向}（在 $\ell_2$ 范数约束下）：
+\[
+  \argmin_{\norm{d}_2\le 1} \ip{\grad f(\theta)}{d}=-\frac{\grad f(\theta)}{\norm{\grad f(\theta)}_2}.
+\]
+这给出了梯度下降：
+\[
+  \theta_{t+1}=\theta_t-\eta\grad f(\theta_t).
+\]
+
+\vspace{.3cm}
+\textbf{关键观察}：\"最陡\"依赖于如何度量\"步长\"。$\ell_2$ 范数不是唯一选择，也不是最好的选择。
+\end{frame}
+
+\begin{frame}{预条件梯度下降：改变度量}
+引入对称正定矩阵 $P\succ0$，定义加权范数：
+\[
+  \norm{x}_P:=\sqrt{x^\top P^{-1}x}.
+\]
+
+\vspace{.25cm}
+在 $P^{-1}$ 范数约束下，最陡下降方向变为：
+\[
+  d^\star=\argmin_{\norm{d}_{P^{-1}}\le 1}\ip{\grad f(\theta)}{d}
+        =-P\frac{\grad f(\theta)}{\norm{\grad f(\theta)}_P}.
+\]
+
+\vspace{.25cm}
+去掉范数归一化（吸收进步长），得到预条件梯度下降：
+\[
+  \boxed{\theta_{t+1}=\theta_t-\eta P_t\grad f(\theta_t),\qquad P_t\succ0.}
+\]
+
+\vspace{.25cm}
+\textbf{等价形式}（近端视角）：定义二次模型
+\[
+  d_t=\argmin_{d\in\R^d}\left\{\ip{\grad f(\theta_t)}{d}+\frac{1}{2\eta}d^\top P_t^{-1}d\right\}.
+\]
+一阶必要条件：
+\[
+  \grad f(\theta_t)+\frac{1}{\eta}P_t^{-1}d_t=0\;\Longrightarrow\; d_t=-\eta P_t\grad f(\theta_t).
+\]
+\end{frame}
+
+\begin{frame}{预条件的几何直觉（续）}
+对 $P_t$ 做谱分解 $P_t=Q\Lambda Q^\top$（$\Lambda=\diag(\lambda_1,\ldots,\lambda_d)$，$\lambda_i>0$）：
+\[
+  \Delta\theta_t=-\eta Q\Lambda Q^\top\grad f(\theta_t).
+\]
+
+在旋转坐标系 $\tilde\theta=Q^\top\theta$ 中：
+\[
+  \Delta\tilde\theta_t = Q^\top\Delta\theta_t
+  = -\eta\Lambda\,Q^\top\grad f(\theta_t)
+  = -\eta\Lambda\,\tilde g_t,
+\]
+其中 $\tilde g_t=Q^\top\grad f(\theta_t)$ 是旋转后的梯度。分量形式：
+\[
+  \Delta\tilde\theta_{t,i}=-\eta\lambda_i\,\tilde g_{t,i}.
+\]
+
+\textbf{几何含义}：
+\begin{itemize}
+  \item $\lambda_i$ 大（即 $P_t$ 在该方向拉伸）：步子放大。
+  \item $\lambda_i$ 小（即 $P_t$ 在该方向收缩）：步子缩小。
+  \item 预条件器的本质：在目标函数的\textbf{自然几何}中走最陡方向，而非在欧氏几何中。
+\end{itemize}
+
+\vspace{.25cm}
+\textbf{核心问题}：如何从一阶信息（梯度）构造好的 $P_t$？这就是自适应方法要解决的。
+\end{frame}
+
+\begin{frame}{二阶信息与一阶优化器的边界}
+牛顿法使用精确 Hessian：
+\[
+  \theta_{t+1}=\theta_t-\eta[\grad^2 f(\theta_t)]^{-1}\grad f(\theta_t).
+\]
+\textbf{优势}：在局部二次近似下，一步到达极小点（$\eta=1$ 时）。\\
+\textbf{问题}：深度学习场景中 Hessian 维度为 $d\times d$（$d$ 可达 $10^9$ 以上），存储和求逆不可能。
+
+\vspace{.25cm}
+\textbf{一阶估计 Hessian 信息}：定义累积梯度外积
+\[
+  G_t:=\sum_{s=1}^t g_s g_s^\top,\qquad g_s=\grad_\theta\ell(\theta_s;\xi_s).
+\]
+
+\textbf{为什么 $g_s g_s^\top$ 与 Hessian 相关？}
+\begin{itemize}
+  \item 在负对数似然模型中，Fisher 信息矩阵 $\mathcal{I}(\theta)=\E[g g^\top]$ 等于 Hessian 的期望（在模型 well-specified 时）。
+  \item 更一般地，$g_s g_s^\top$ 记录了梯度变化的主要方向——\"梯度在哪些方向波动大\"。
+  \item 即使是非凸深度学习，$G_t$ 的经验谱通常与 Hessian 的谱高度相关。
+\end{itemize}
+
+\vspace{.25cm}
+三种近似精度的梯度外积用法：
+\[
+  \text{Adam: }\diag(G_t)^{-1/2}\qquad
+  \text{full-matrix AdaGrad: }G_t^{-1/2}\qquad
+  \text{Shampoo: Kronecker 分解 }G_t
+\]
+\end{frame}
+
+\begin{frame}{谱分解与矩阵函数简述}
+任何实对称矩阵 $A\in\R^{d\times d}$ 可对角化：
+\[
+  A=Q\Lambda Q^\top=\sum_{i=1}^d\lambda_i q_i q_i^\top,
+\]
+其中 $Q=[q_1,\ldots,q_d]$ 正交（$Q^\top Q=I$），$\Lambda=\diag(\lambda_1,\ldots,\lambda_d)$。
+
+\vspace{.25cm}
+\textbf{矩阵函数}：对标量函数 $\phi:\R\to\R$，定义
+\[
+  \phi(A):=Q\,\diag(\phi(\lambda_1),\ldots,\phi(\lambda_d))\,Q^\top.
+\]
+常用实例：
+\begin{itemize}
+  \item $A^{-1}=Q\diag(\lambda_1^{-1},\ldots,\lambda_d^{-1})Q^\top$（$\lambda_i>0$ 时）。
+  \item $A^{-1/2}=Q\diag(\lambda_1^{-1/2},\ldots,\lambda_d^{-1/2})Q^\top$。
+  \item $A^{1/4}=Q\diag(\lambda_1^{1/4},\ldots,\lambda_d^{1/4})Q^\top$。
+\end{itemize}
+
+\vspace{.25cm}
+\textbf{条件数与稳定性}：
+\[
+  \kappa(A)=\frac{\lambda_{\max}(A)}{\lambda_{\min}(A)}.
+\]
+$\kappa(A)$ 很大时：\\
+-- 求 $A^{-1}$ 对噪声敏感（小特征值放大误差）。\\
+-- 求 $A^{\alpha}$ 引入的舍入误差与 $\kappa^\alpha$ 相关。\\
+-- 实际中通过 \textbf{damping} $A+\eps I$ 将特征值抬离 0，控制有效条件数 $\kappa_\eps(A)=\frac{\lambda_{\max}+\eps}{\lambda_{\min}+\eps}$。
+\end{frame}
+
+% ======================================================================
+\section{Adam：对角自适应}
+% ======================================================================
+
+\begin{frame}{Adam：完整公式与逐行解释}
+设 $g_t=\grad_\theta\ell(\theta_t;\xi_t)\in\R^d$ 为第 $t$ 步的随机梯度。
+
+\vspace{.2cm}
+\textbf{第一步：指数移动平均 (EMA) 估计一阶矩}
+\[
+  m_t=\beta_1 m_{t-1}+(1-\beta_1)g_t.
+\]
+展开：
+\[
+  m_t=(1-\beta_1)\sum_{k=1}^t\beta_1^{t-k}g_k.
+\]
+这是一个低通滤波器：$\beta_1\approx0.9$ 意味着约 $1/(1-\beta_1)=10$ 步的平滑窗口。
+
+\vspace{.2cm}
+\textbf{第二步：EMA 估计二阶矩（逐坐标平方）}
+\[
+  v_t=\beta_2 v_{t-1}+(1-\beta_2)g_t^{\odot2},\qquad
+  g_t^{\odot2}=[g_{t,1}^2,\ldots,g_{t,d}^2]^\top.
+\]
+
+\vspace{.2cm}
+\textbf{第三步：偏差修正（bias correction）}
+\[
+  \hat m_t=\frac{m_t}{1-\beta_1^t},\qquad
+  \hat v_t=\frac{v_t}{1-\beta_2^t}.
+\]
+
+\vspace{.2cm}
+\textbf{第四步：更新}
+\[
+  \theta_{t+1}=\theta_t-\eta\frac{\hat m_t}{\sqrt{\hat v_t}+\eps},\qquad
+  \text{逐坐标除法：}\frac{\hat m_{t,i}}{\sqrt{\hat v_{t,i}}+\eps}.
+\]
+其中 $\eps$（典型值 $10^{-8}$）防止除零。
+\end{frame}
+
+\begin{frame}{Adam 的偏差修正：完整推导}
+假设梯度序列 $\{g_t\}$ 有恒定期望 $\E[g_t]=\mu$。EMA 从零初始化 $m_0=0$。
+
+\vspace{.25cm}
+\textbf{展开 $m_t$}：
+\[
+  \begin{aligned}
+  m_t &= (1-\beta_1)\sum_{k=1}^t\beta_1^{t-k}g_k,\\[3pt]
+  \E[m_t] &= (1-\beta_1)\sum_{k=1}^t\beta_1^{t-k}\mu
+           = (1-\beta_1)\frac{1-\beta_1^t}{1-\beta_1}\,\mu
+           = (1-\beta_1^t)\mu.
+  \end{aligned}
+\]
+
+\vspace{.2cm}
+\textbf{偏差修正因子}：$\E[m_t]=(1-\beta_1^t)\mu$，即 $m_t$ 系统性地低估了真实一阶矩（尤其 $t$ 小时）。因此：
+\[
+  \E[\hat m_t]=\E\!\left[\frac{m_t}{1-\beta_1^t}\right]=\frac{(1-\beta_1^t)\mu}{1-\beta_1^t}=\mu.
+\]
+$\hat m_t$ 是无偏估计。
+
+\vspace{.2cm}
+\textbf{二阶矩同理}：$\E[v_t]=(1-\beta_2^t)\E[g_t^{\odot2}]$，故 $\hat v_t=v_t/(1-\beta_2^t)$。
+
+\vspace{.25cm}
+\textbf{实践意义}：如果不做偏差修正，初始几步学习率会异常大（分母 $v_t$ 偏小），导致训练不稳定。
+\end{frame}
+
+\begin{frame}{Adam 的对角预条件结构}
+将 Adam 更新写为预条件形式：
+\[
+  \Delta\theta_t=-\eta\,\underbrace{\diag(\hat v_t+\eps^2)^{-1/2}}_{=:P_t}\,\hat m_t.
+\]
+其中 $P_t$ 是一个\textbf{对角矩阵}：
+\[
+  P_t=\diag\!\left(\frac{1}{\sqrt{\hat v_{t,1}}+\eps},\;\ldots,\;\frac{1}{\sqrt{\hat v_{t,d}}+\eps}\right).
+\]
+
+\vspace{.25cm}
+\textbf{逐坐标的行为}：
+\begin{itemize}
+  \item 坐标 $i$ 的梯度长期方差大（频繁波动）：$\hat v_{t,i}$ 大 $\Rightarrow$ 有效步长 $\frac{\eta}{\sqrt{\hat v_{t,i}}}$ 小 $\Rightarrow$ 谨慎更新。
+  \item 坐标 $i$ 的梯度稀疏（偶尔出现大值）：$\hat v_{t,i}$ 维持在较小水平 $\Rightarrow$ 一旦出现信号，获得较大更新。
+  \item 坐标 $i$ 的历史梯度持续接近 0：$\hat v_{t,i}\approx0$ $\Rightarrow$ $\eps$ 提供最小保护。
+\end{itemize}
+
+\vspace{.25cm}
+\textbf{Adam 的根本局限}：$P_t$ 始终是对角矩阵 $\Rightarrow$ 预条件只在坐标轴方向有效。\\
+如果真正需要的几何是\"旋转\"的（即 Hessian 有大的非对角元），Adam 无法捕捉。
+\end{frame}
+
+\begin{frame}{AdamW：Weight Decay 解耦的数学原理}
+\textbf{传统 L2 正则化}在 SGD 中：
+\[
+  \theta_{t+1}=\theta_t-\eta(g_t+\lambda\theta_t)=(1-\eta\lambda)\theta_t-\eta g_t.
+\]
+等价于先缩小权重（weight decay），再做梯度更新。
+
+\vspace{.25cm}
+\textbf{L2 正则化在 Adam 中的问题}：
+\[
+  g_t\leftarrow g_t+\lambda\theta_t,\qquad
+  \Delta\theta_t=-\eta\frac{\hat m_t^{\text{(含正则)}}}{\sqrt{\hat v_t}+\eps}.
+\]
+正则项 $\lambda\theta_t$ 被 $v_t$ 逐坐标缩放，不再等价于均匀的权重衰减。\\
+-- 对大梯度坐标，$\lambda\theta_{t,i}/\sqrt{\hat v_{t,i}}$ 很小 $\Rightarrow$ 正则化效果弱。\\
+-- 对小梯度坐标，正则化反而强。
+
+\vspace{.25cm}
+\textbf{AdamW 解耦}：
+\[
+  \boxed{\theta_{t+1}=(1-\eta\lambda)\theta_t-\eta\frac{\hat m_t}{\sqrt{\hat v_t}+\eps}.}
+\]
+\begin{itemize}
+  \item 第一项 $(1-\eta\lambda)\theta_t$：对所有参数做均匀的 weight decay（与梯度无关）。
+  \item 第二项：Adam 的标准自适应更新（仅来自 loss gradient）。
+  \item 两个机制独立运作，不互相干扰。
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Adam 的收敛理论：已知的条件与陷阱}
+Adam 原始收敛证明（Kingma \& Ba, 2014）后被 Reddi et al. (2018) 指出有误。核心问题：
+
+\vspace{.2cm}
+\textbf{有效步长可能不收敛}：定义 $\Gamma_t=\diag(\sqrt{v_t})^{-1}-\diag(\sqrt{v_{t-1}})^{-1}$。\\
+如果存在坐标使 $\Gamma_t$ 在无限步上不趋于 0，则有效学习率 $\eta/\sqrt{v_t}$ 持续振荡，不满足收敛条件。
+
+\vspace{.2cm}
+\textbf{AMSGrad 的修正}（Reddi et al., 2018）：
+\[
+  \hat v_t=\max(\hat v_{t-1},v_t),\qquad
+  \theta_{t+1}=\theta_t-\frac{\eta}{\sqrt{t}}\frac{\hat m_t}{\sqrt{\hat v_t}+\eps}.
+\]
+用逐坐标递增的 $\hat v_t$ 保证有效学习率非增（$\eta_t=\eta/\sqrt{t}$ 进一步控制）。
+
+\vspace{.2cm}
+\textbf{凸情形下的标准假设}（用于理论分析）：
+\begin{itemize}
+  \item $f$ 是 convex 且 $L$-smooth：$\norm{\grad f(x)-\grad f(y)}\le L\norm{x-y}$。
+  \item 随机梯度无偏且有界方差：$\E[g_t\mid\theta_t]=\grad f(\theta_t)$，$\E[\norm{g_t-\grad f(\theta_t)}^2]\le\sigma^2$。
+  \item 梯度有界：$\norm{g_t}_\infty\le G_\infty$。
+\end{itemize}
+在这些假设下，Adam (with AMSGrad fix) 的 regret 为 $\mathcal{O}(\sqrt{T})$，与 AdaGrad 同阶。
+\end{frame}
+
+% ======================================================================
+\section{Shampoo：矩阵/张量预条件}
+% ======================================================================
+
+\begin{frame}{从 full-matrix AdaGrad 到 Shampoo}
+\textbf{Full-matrix AdaGrad}（Duchi et al., 2011）：
+\[
+  H_t=\eps I+\sum_{s=1}^t g_s g_s^\top,\qquad
+  \theta_{t+1}=\theta_t-\eta H_t^{-1/2}g_t.
+\]
+\begin{itemize}
+  \item $H_t\in\R^{d\times d}$ 存储全部梯度外积历史。
+  \item 空间 $\mathcal{O}(d^2)$，矩阵根 $\mathcal{O}(d^3)$。
+  \item 对深度学习不可行（$d$ 通常 $10^6$--$10^9$）。
+\end{itemize}
+
+\vspace{.25cm}
+\textbf{关键观察}：对于神经网络中的矩阵参数 $W\in\R^{n\times m}$（如线性层的权重），
+梯度 $G_t=\grad_W\ell\in\R^{n\times m}$ 的\"向量化\"外积 $g_t g_t^\top$（$g_t=\vect(G_t)$）具有
+\textbf{Kronecker 积结构}。
+
+\vspace{.25cm}
+\textbf{Shampoo 的核心思想}：不是维护一个 $(nm)\times(nm)$ 的大矩阵，而是分别维护：
+\[
+  L_t=\eps I_n+\sum_{s=1}^t G_s G_s^\top\in\R^{n\times n},\qquad
+  R_t=\eps I_m+\sum_{s=1}^t G_s^\top G_s\in\R^{m\times m}.
+\]
+$L_t$ 捕获行空间的相关性（左因子），$R_t$ 捕获列空间的相关性（右因子）。
+\end{frame}
+
+\begin{frame}{Shampoo 的 Kronecker 近似：为什么有效}
+向量化梯度 $g_t=\vect(G_t)\in\R^{nm}$ 的外积：
+\[
+  g_t g_t^\top=\vect(G_t)\vect(G_t)^\top\in\R^{nm\times nm}.
+\]
+
+Kronecker 近似假设：
+\[
+  \E[g_t g_t^\top]\approx \frac{1}{m}R\otimes\frac{1}{n}L,
+\]
+其中 $L=\E[G_t G_t^\top]$（行协方差），$R=\E[G_t^\top G_t]$（列协方差）。
+
+\vspace{.25cm}
+\textbf{这个近似的合理性}：
+\begin{itemize}
+  \item 若 $G_t$ 的每个元素独立同分布，则 $\E[g_t g_t^\top]=(\E[G_t^\top G_t])\otimes I$ 或类似结构。
+  \item 更一般地，若 $G_t=U\Sigma_t V^\top$ 且 $U,V$ 固定（梯度主要沿固定行/列子空间变化），则外积完全由 $L_t,R_t$ 决定。
+  \item 实践中，神经网络的梯度确实展现近似低秩和可分离的协方差结构。
+\end{itemize}
+
+\vspace{.25cm}
+\textbf{逆平方根}：若 $H_t\approx R_t\otimes L_t$，则
+\[
+  H_t^{-1/2}\approx (R_t\otimes L_t)^{-1/2}=R_t^{-1/2}\otimes L_t^{-1/2}.
+\]
+注意 Shampoo 使用 $-1/4$ 次幂，这在下一帧详述。
+\end{frame}
+
+\begin{frame}{Shampoo 更新公式的推导}
+矩阵参数 $W_t\in\R^{n\times m}$ 的更新：
+\[
+  \boxed{W_{t+1}=W_t-\eta\,L_t^{-1/4}\,G_t\,R_t^{-1/4}.}
+\]
+
+\vspace{.25cm}
+\textbf{为什么是 $-1/4$？} 向量化后：
+\[
+  \begin{aligned}
+  \vect(W_{t+1}) &= \vect(W_t)-\eta\,\vect(L_t^{-1/4}G_t R_t^{-1/4})\\[3pt]
+  &= \vect(W_t)-\eta\,(R_t^{-1/4}\otimes L_t^{-1/4})\,\vect(G_t).
+  \end{aligned}
+\]
+使用了恒等式 $\vect(AXB)=(B^\top\otimes A)\vect(X)$（这里 $R_t$ 对称，所以 $R_t^{-1/4}=(R_t^{-1/4})^\top$）。
+
+\vspace{.25cm}
+在向量化空间中，预条件器为：
+\[
+  P_t=R_t^{-1/4}\otimes L_t^{-1/4}.
+\]
+若 $H_t\approx R_t^{1/2}\otimes L_t^{1/2}$（这是外积的和，不是外积的和的平方根），则我们需要
+$H_t^{-1/2}\approx R_t^{-1/4}\otimes L_t^{-1/4}$。
+
+\vspace{.25cm}
+\textbf{更精确地说}：Shampoo 维护的是 $L_t=\sum G_s G_s^\top$ 和 $R_t=\sum G_s^\top G_s$，
+而 $H_t=\sum\vect(G_s)\vect(G_s)^\top$。Kronecker 近似是说 $H_t\approx R_t\otimes L_t$ 或经过归一化后的版本。
+矩阵根中的指数 $1/(2p)$ 来自 $p$ 阶张量的推广。
+\end{frame}
+
+\begin{frame}{张量推广：一般情况下的 Shampoo}
+对于 $p$ 阶张量参数 $\mathcal{W}\in\R^{d_1\times d_2\times\cdots\times d_p}$，梯度为同形张量 $\mathcal{G}_t$。
+
+\vspace{.25cm}
+对每个 mode $k\in\{1,\ldots,p\}$ 维护预条件矩阵：
+\[
+  A_{t,k}=\eps I_{d_k}+\sum_{s=1}^t\mathcal{G}_{s,(k)}\mathcal{G}_{s,(k)}^\top,
+\]
+其中 $\mathcal{G}_{s,(k)}\in\R^{d_k\times(\prod_{j\neq k}d_j)}$ 是梯度沿第 $k$ 个 mode 展开（matricization）。
+
+\vspace{.25cm}
+更新公式：
+\[
+  \mathcal{W}_{t+1}=\mathcal{W}_t-\eta\,\mathcal{G}_t\times_1 A_{t,1}^{-1/(2p)}\times_2 A_{t,2}^{-1/(2p)}\times_3\cdots\times_p A_{t,p}^{-1/(2p)},
+\]
+其中 $\times_k$ 是沿第 $k$ 个 mode 的缩并（tensor-mode product）。
+
+\vspace{.25cm}
+\textbf{向量化视角}：预条件矩阵为 Kronecker 积
+\[
+  P_t=A_{t,p}^{-1/(2p)}\otimes A_{t,p-1}^{-1/(2p)}\otimes\cdots\otimes A_{t,1}^{-1/(2p)}.
+\]
+每个 mode 分担总预条件强度 $1/(2p)$，合起来正好是理论上的 $-1/2$ 量级。
+\end{frame}
+
+\begin{frame}{矩阵根的计算：数值方法}
+计算 $A^{-1/4}$（或一般 $A^\alpha$）的常用方法：
+
+\vspace{.2cm}
+\textbf{方法一：特征分解（精确但昂贵）}
+\[
+  A=Q\Lambda Q^\top\;\Longrightarrow\; A^\alpha=Q\Lambda^\alpha Q^\top.
+\]
+复杂度 $\mathcal{O}(d^3)$。对 Shampoo 中的 $n\times n$ 矩阵（$n$ 通常为 512--4096），每步做 eigendecomposition 不可行。
+
+\vspace{.2cm}
+\textbf{方法二：Newton-Schulz 迭代（近似，GPU 友好）}
+对于 $A^{-1/2}$：
+\[
+  \begin{aligned}
+  X_0 &= A/\norm{A}_F,\\
+  X_{k+1} &= \tfrac{3}{2}X_k-\tfrac{1}{2}X_k^3A.
+  \end{aligned}
+\]
+若 $A$ 接近单位阵则快速收敛。收敛条件：$\norm{I-A}<1$。\\
+对于 $A^{-1/4}$，可先算 $A^{-1/2}$ 再算其平方根，或使用专门的迭代。
+
+\vspace{.2cm}
+\textbf{方法三：SVD + 幂迭代（中等精度）}
+利用 $L_t$ 和 $R_t$ 的低秩性质，只算前 $k$ 个特征对。
+
+\vspace{.25cm}
+\textbf{Shampoo 实际做法}：每 $T$ 步（如 $T=100$）更新一次矩阵根，大幅摊销计算代价。
+\end{frame}
+
+\begin{frame}{Shampoo 的内存与计算开销}
+\begin{tabular}{lcc}
+\toprule
+优化器 & 额外内存（每个矩阵参数 $W\in\R^{n\times m}$） & 每步计算 \\
+\midrule
+SGD (momentum) & $nm$（momentum buffer） & $\mathcal{O}(nm)$  \\
+Adam & $2nm$（$m,v$ 各一份） & $\mathcal{O}(nm)$ \\
+Shampoo & $n^2+m^2+nm$（$L,R$ + buffer） & $\mathcal{O}(n^2+m^2+nm)$ 均摊\\
+\bottomrule
+\end{tabular}
+
+\vspace{.3cm}
+\textbf{减缓开销的技巧}：
+\begin{itemize}
+  \item \textbf{Block-diagonal approximation}：将 $W$ 按输入/输出维度分块，每块独立维护较小的 $L_t,R_t$。
+  \item \textbf{层间共享}：对于同尺寸的多头 attention 或 MLP 层，可共享预条件器。
+  \item \textbf{混合精度}：$L_t,R_t$ 可用 FP32 维护以确保矩阵根精度，更新本身用 BF16/FP16。
+  \item \textbf{Adafactor}（Shazeer \& Stern, 2018）：使用秩-1 近似代替完整 $L_t,R_t$，将内存降至 $\mathcal{O}(n+m)$。
+\end{itemize}
+\end{frame}
+
+% ======================================================================
+\section{SOAP：旋转坐标中的 Adam}
+% ======================================================================
+
+\begin{frame}{SOAP 的核心动机}
+回顾三个事实：
+\begin{enumerate}
+  \item \textbf{Adam 的局限}：对角预条件对坐标轴旋转敏感——旋转坐标系后 Adam 的行为完全改变。
+  \item \textbf{Shampoo 的优势}：$L_t,R_t$ 的谱分解给出梯度的\"自然\"方向——特征基 $Q_L,Q_R$ 是比坐标轴更好的坐标系。
+  \item \textbf{Shampoo 的局限}：直接用矩阵根 $L_t^{-1/4},R_t^{-1/4}$ 缩放，缺少 Adam 中 EMA 带来的方差平滑和时间稳定性。
+\end{enumerate}
+
+\vspace{.25cm}
+\textbf{SOAP 的融合方案}：
+\[
+  \boxed{\text{SOAP = Shampoo 的特征基 $\times$ 基内的 Adam 自适应}}
+\]
+
+\vspace{.25cm}
+\begin{itemize}
+  \item 用 Shampoo 因子 $L_t,R_t$ 的\textbf{特征向量}（而非特征值缩放）来旋转梯度。
+  \item 在旋转后的坐标系中，运行标准的 Adam（$m$ 和 $v$ 的 EMA）。
+  \item 每次特征基更新时，需要将 Adam 状态也转换到新基中。
+\end{itemize}
+\end{frame}
+
+\begin{frame}{SOAP：完整算法描述}
+\textbf{维护的状态}：
+\begin{itemize}
+  \item Shampoo 因子：$L_t=\beta_L L_{t-1}+(1-\beta_L)G_t G_t^\top$，$R_t=\beta_R R_{t-1}+(1-\beta_R)G_t^\top G_t$。
+  \item 特征基（每 $K$ 步更新一次）：
+  \[
+    L_t=Q_L\Lambda_L Q_L^\top,\qquad R_t=Q_R\Lambda_R Q_R^\top.
+  \]
+  \item 旋转后的梯度：$\tilde G_t=Q_L^\top G_t Q_R$。
+  \item 旋转坐标系中的 Adam 状态：
+  \[
+    \tilde m_t=\beta_1\tilde m_{t-1}+(1-\beta_1)\tilde G_t,\qquad
+    \tilde v_t=\beta_2\tilde v_{t-1}+(1-\beta_2)\tilde G_t^{\odot2}.
+  \]
+\end{itemize}
+
+\vspace{.2cm}
+\textbf{更新}：
+\[
+  \Delta W_t=Q_L\left(\frac{\hat{\tilde m}_t}{\sqrt{\hat{\tilde v}_t}+\eps}\right)Q_R^\top.
+\]
+这里的分割和开方仍然是逐元素（Hadamard）操作。
+
+\vspace{.2cm}
+\textbf{基变换时的状态迁移}：若第 $t$ 步更新了 $Q_L,Q_R$，Adam 状态需转换：
+\[
+  \tilde m_t^{\text{new}}=(Q_L^{\text{new}})^\top Q_L^{\text{old}}\;\tilde m_t^{\text{old}}\;(Q_R^{\text{old}})^\top Q_R^{\text{new}}.
+\]
+$\tilde v_t$ 同理。
+\end{frame}
+
+\begin{frame}{SOAP vs Shampoo vs Adam：运行机制对比}
+\begin{center}
+\begin{tikzpicture}[node distance=2.5cm and 2.0cm, >=Stealth, every node/.style={font=\small, align=center}]
+  % Adam
+  \node[draw, rounded corners, fill=blue!8, minimum width=2.3cm, minimum height=.7cm] (A1) {梯度 $g_t$};
+  \node[draw, rounded corners, fill=blue!8, right=of A1, minimum width=2.5cm, minimum height=.7cm] (A2) {对角 $v_t$ (EMA)};
+  \node[draw, rounded corners, fill=blue!8, right=of A2, minimum width=2.3cm, minimum height=.7cm] (A3) {$\Delta\theta=-\eta\frac{m_t}{\sqrt{v_t}}$};
+  \draw[->] (A1) -- (A2);
+  \draw[->] (A2) -- (A3);
+
+  % Shampoo
+  \node[draw, rounded corners, fill=green!8, below=of A1, minimum width=2.3cm, minimum height=.7cm] (S1) {梯度 $G_t$};
+  \node[draw, rounded corners, fill=green!8, right=of S1, minimum width=2.5cm, minimum height=.7cm] (S2) {$L_t,R_t$ (外积累积)};
+  \node[draw, rounded corners, fill=green!8, right=of S2, minimum width=2.3cm, minimum height=.7cm] (S3) {$\Delta W=-\eta L^{-1/4}GR^{-1/4}$};
+  \draw[->] (S1) -- (S2);
+  \draw[->] (S2) -- (S3);
+
+  % SOAP
+  \node[draw, rounded corners, fill=orange!10, below=of S1, minimum width=2.3cm, minimum height=.7cm] (O1) {梯度 $G_t$};
+  \node[draw, rounded corners, fill=orange!10, right=of O1, minimum width=2.5cm, minimum height=.7cm] (O2) {$L_t,R_t\rightarrow Q_L,Q_R$\\（特征基，低频更新）};
+  \node[draw, rounded corners, fill=orange!10, right=of O2, minimum width=2.3cm, minimum height=.7cm] (O3) {旋转 $\tilde G_t$ 上跑 Adam};
+  \node[draw, rounded corners, fill=orange!10, right=of O3, minimum width=2.3cm, minimum height=.7cm] (O4) {$\Delta W=Q_L\tilde\Delta Q_R^\top$};
+  \draw[->] (O1) -- (O2);
+  \draw[->] (O2) -- (O3);
+  \draw[->] (O3) -- (O4);
+
+  \node[left=0.2cm of A1, font=\bfseries] {Adam:};
+  \node[left=0.2cm of S1, font=\bfseries] {Shampoo:};
+  \node[left=0.2cm of O1, font=\bfseries] {SOAP:};
+\end{tikzpicture}
+\end{center}
+
+\vspace{.2cm}
+\textbf{核心差异}：
+\begin{itemize}
+  \item Shampoo 用矩阵根的\textbf{特征值缩放}（$L^{-1/4},R^{-1/4}$），但丢弃了 EMA 的平滑。
+  \item SOAP 用矩阵根的\textbf{特征方向}（$Q_L,Q_R$），在旋转坐标中保留 EMA。
+  \item 因此 SOAP 的 Adam 状态建立在\"好坐标系\"中——既享有了 Shampoo 的几何，又保留了 Adam 的稳定方差估计。
+\end{itemize}
+\end{frame}
+
+\begin{frame}{SOAP 的超参数与工程考量}
+除 Adam 的 $\eta,\beta_1,\beta_2,\eps$ 外，SOAP 引入：
+\begin{itemize}
+  \item \textbf{预条件器更新频率 $K$}：每 $K$ 步对 $L_t,R_t$ 做 eigendecomposition。\\
+  $K=1$：理论上最好，计算量太大。\\
+  $K=100$：摊销计算，但基可能略微过时。\\
+  典型选择：$K=50$--$200$，需实验调优。
+  \item \textbf{预条件器 EMA 参数 $\beta_L,\beta_R$}：控制 $L_t,R_t$ 对历史梯度的平滑程度。\\
+  类似 $\beta_2$ 的角色，但作用于矩阵外积而非逐坐标平方。
+  \item \textbf{Damping $\eps_L,\eps_R$}：$L_t+\eps_L I$ 和 $R_t+\eps_R I$ 中的 damping 参数。
+\end{itemize}
+
+\vspace{.25cm}
+\textbf{消融实验设计}（理解各组件的作用）：
+\begin{enumerate}
+  \item 固定 $Q_L,Q_R$ 为单位阵（退化为 Adam）。
+  \item 只用 $L_t$ 预条件（只用行空间，$\Delta W=L^{-1/2}G$）。
+  \item 关闭 EMA（$m$ 中 $\beta_1=0$，只用 $v$ 的预条件）。
+  \item 不同 $K$ 值：观察 loss 曲线与 wall-clock 的 trade-off。
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{三者对比总结}
+\begin{tabular}{p{2.5cm}p{3cm}p{3.2cm}p{3cm}}
+\toprule
+维度 & Adam / AdamW & Shampoo & SOAP \\
+\midrule
+几何信息 & 对角二阶矩 $v_t$ & 矩阵/张量外积累积 & Shampoo 特征基 \\
+坐标系 & 固定（坐标轴） & 固定 & 低频旋转至特征基 \\
+每步计算 & $\mathcal{O}(d)$ & $\mathcal{O}(n^2+m^2)$ 均摊 & $\mathcal{O}(n^2+m^2+nm)$ 均摊 \\
+额外内存 & $2d$ & $n^2+m^2+d$ & $n^2+m^2+3d$ \\
+坐标相关性 & 无（对角） & 有（Kronecker 结构） & 有（特征基旋转） \\
+时间平滑 & EMA ($m,v$) & 外积累积（无 EMA） & EMA 在特征基中 \\
+主要瓶颈 & 表达能力受限 & 矩阵根、内存 & 基更新、状态旋转 \\
+\bottomrule
+\end{tabular}
+
+\vspace{.4cm}
+一个有用的递进心智模型：
+\[
+  \text{Adam：缩放坐标轴}\;\longrightarrow\;
+  \text{Shampoo：学习椭球几何}\;\longrightarrow\;
+  \text{SOAP：在学到的坐标系里跑 Adam}
+\]
+\end{frame}
+
+% ======================================================================
+\section{数学基础}
+% ======================================================================
+
+\begin{frame}{光滑性与凸性：基本定义}
+\textbf{目标}：$\min_{\theta\in\R^d}f(\theta)$。
+
+\vspace{.2cm}
+\textbf{$L$-smooth（$L$-光滑）}：存在 $L>0$，使得对任意 $x,y\in\R^d$，
+\[
+  \norm{\grad f(x)-\grad f(y)}\le L\norm{x-y}.
+\]
+\textbf{等价刻画（下降引理）}：
+\[
+  f(y)\le f(x)+\ip{\grad f(x)}{y-x}+\frac{L}{2}\norm{y-x}^2,\quad\forall x,y.
+\]
+
+\vspace{.2cm}
+\textbf{$\mu$-strongly convex（$\mu$-强凸）}：存在 $\mu>0$，使得对任意 $x,y\in\R^d$，
+\[
+  f(y)\ge f(x)+\ip{\grad f(x)}{y-x}+\frac{\mu}{2}\norm{y-x}^2.
+\]
+
+\vspace{.2cm}
+\textbf{二次函数的典范}：$f(x)=\frac12x^\top A x+b^\top x$（$A\succ0$）。
+\begin{itemize}
+  \item $L=\lambda_{\max}(A)$（最大特征值）。
+  \item $\mu=\lambda_{\min}(A)$（最小特征值）。
+  \item 条件数 $\kappa=L/\mu$ 决定梯度下降的收敛速度。
+\end{itemize}
+\end{frame}
+
+\begin{frame}{梯度下降在光滑凸条件下的收敛}
+假设 $f$ 是 $L$-smooth 且 convex。取 $\eta\le1/L$：
+
+\vspace{.2cm}
+\textbf{下降引理的直接推论}：
+\[
+  \begin{aligned}
+  f(\theta_{t+1}) &\le f(\theta_t)+\ip{\grad f(\theta_t)}{\theta_{t+1}-\theta_t}
+                   +\frac{L}{2}\norm{\theta_{t+1}-\theta_t}^2\\[3pt]
+  &= f(\theta_t)-\eta\ip{\grad f(\theta_t)}{\grad f(\theta_t)}
+     +\frac{L\eta^2}{2}\norm{\grad f(\theta_t)}^2\\[3pt]
+  &= f(\theta_t)-\eta\left(1-\frac{L\eta}{2}\right)\norm{\grad f(\theta_t)}^2.
+  \end{aligned}
+\]
+当 $\eta=1/L$ 时，每次迭代至少下降 $\frac{1}{2L}\norm{\grad f(\theta_t)}^2$。
+
+\vspace{.2cm}
+\textbf{收敛率}：若额外有 $\mu$-强凸，取 $\eta=1/L$，则
+\[
+  f(\theta_T)-f(\theta^\star)\le\left(1-\frac{\mu}{L}\right)^T[f(\theta_0)-f(\theta^\star)].
+\]
+步数 $T=\mathcal{O}\!\left(\frac{L}{\mu}\log\frac{1}{\eps}\right)$ 时达到 $\eps$-精度。
+\textbf{条件数 $\kappa=L/\mu$ 直接决定迭代次数。}
+\end{frame}
+
+\begin{frame}{梯度下降收敛性的完整证明（参考）}
+\textbf{定理}：若 $f$ 是 $L$-smooth 且 $\mu$-强凸，则 GD 以 $\eta\le2/(\mu+L)$ 线性收敛。
+
+\vspace{.15cm}
+\textbf{证明概要}：
+\begin{enumerate}
+  \item 定义 $\theta^\star=\argmin f$，则 $\grad f(\theta^\star)=0$。
+  \item 由强凸性：$\mu\norm{\theta-\theta^\star}^2\le\ip{\grad f(\theta)}{\theta-\theta^\star}$。
+  \item 展开距离平方：
+  \[
+    \begin{aligned}
+    \norm{\theta_{t+1}-\theta^\star}^2
+    &=\norm{\theta_t-\eta\grad f(\theta_t)-\theta^\star}^2\\
+    &=\norm{\theta_t-\theta^\star}^2-2\eta\ip{\grad f(\theta_t)}{\theta_t-\theta^\star}
+      +\eta^2\norm{\grad f(\theta_t)}^2.
+    \end{aligned}
+  \]
+  \item 用 co-coercivity：$\ip{\grad f(\theta_t)}{\theta_t-\theta^\star}\ge
+    \frac{\mu L}{\mu+L}\norm{\theta_t-\theta^\star}^2+\frac{1}{\mu+L}\norm{\grad f(\theta_t)}^2$。
+  \item 代入并选择 $\eta=2/(\mu+L)$ 得到最大缩减因子 $(1-\frac{2\mu}{\mu+L})^2=(\frac{\kappa-1}{\kappa+1})^2$。
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{随机梯度的统计模型}
+在随机优化中，我们只能获取含噪梯度：
+\[
+  g_t=\grad f(\theta_t)+\xi_t,\qquad\text{其中 }\xi_t\text{ 是随机噪声}.
+\]
+
+\vspace{.25cm}
+\textbf{标准假设}：
+\begin{itemize}
+  \item \textbf{无偏性}：$\E[g_t\mid\theta_t]=\grad f(\theta_t)$（等价于 $\E[\xi_t\mid\theta_t]=0$）。
+  \item \textbf{有界方差}：$\E[\norm{g_t-\grad f(\theta_t)}^2\mid\theta_t]\le\sigma^2$。
+  \item \textbf{(可选) 次高斯噪声}：对任意的 $v\in\R^d$，$\E[\exp(\ip{v}{\xi_t})]\le\exp(\norm{v}^2\sigma^2/2)$，用于 high-probability bounds。
+\end{itemize}
+
+\vspace{.25cm}
+\textbf{SGD 的收敛}（凸、光滑、$\sigma^2$ 方差）：
+\[
+  \E[f(\bar\theta_T)]-f(\theta^\star)\le
+  \frac{\norm{\theta_1-\theta^\star}^2}{2\eta T}+\frac{\eta\sigma^2}{2}.
+\]
+取 $\eta=\frac{\norm{\theta_1-\theta^\star}}{\sigma\sqrt{T}}$ 得到 $\mathcal{O}(1/\sqrt{T})$ 速率。
+
+\vspace{.25cm}
+\textbf{关键点}：SGD 的方差项 $\eta\sigma^2/2$ 不随 $T$ 消失（除非递减步长 $\eta_t\to0$），
+这就是自适应方法试图通过逐坐标方差估计来改善的地方。
+\end{frame}
+
+\begin{frame}{镜像下降 (Mirror Descent)：统一视角}
+Mirror Descent 用一个\textbf{距离生成函数} $\psi:\R^d\to\R$（严格凸、可微）定义 Bregman divergence：
+\[
+  D_\psi(x,y)=\psi(x)-\psi(y)-\ip{\grad\psi(y)}{x-y}\ge0.
+\]
+
+\vspace{.2cm}
+\textbf{更新}：
+\[
+  \theta_{t+1}=\argmin_{\theta}\left\{\eta\ip{g_t}{\theta}+D_\psi(\theta,\theta_t)\right\}.
+\]
+一阶条件：$\eta g_t+\grad\psi(\theta_{t+1})-\grad\psi(\theta_t)=0$，即
+\[
+  \grad\psi(\theta_{t+1})=\grad\psi(\theta_t)-\eta g_t.
+\]
+
+\vspace{.2cm}
+\textbf{连接预条件}：取 $\psi_t(\theta)=\frac12\theta^\top H_t\theta$，则
+\[
+  D_{\psi_t}(\theta,\theta_t)=\frac12\norm{\theta-\theta_t}_{H_t}^2,
+\]
+更新变为：
+\[
+  \theta_{t+1}=\theta_t-\eta H_t^{-1}g_t.
+\]
+\textbf{选 Mirror Descent 的距离函数 = 选优化算法的几何。}
+\end{frame}
+
+\begin{frame}{AdaGrad 的 Regret 分析精要}
+在线凸优化设定：每轮 $t$ 选择 $\theta_t$，观察 $g_t=\grad\ell_t(\theta_t)$，目标是最小化 regret：
+\[
+  R_T=\sum_{t=1}^T\ell_t(\theta_t)-\min_{\theta}\sum_{t=1}^T\ell_t(\theta).
+\]
+
+\vspace{.2cm}
+对角 AdaGrad 的更新等价于使用随时间变化的距离函数
+$\psi_t(\theta)=\frac12\theta^\top\diag(s_t)^{1/2}\theta$，其中 $s_{t,i}=\sum_{k=1}^t g_{k,i}^2$。
+
+\vspace{.2cm}
+\textbf{关键 regret bound}（Duchi et al., 2011）：
+\[
+  R_T\le\sqrt{2}\,D_\infty\sum_{i=1}^d\sqrt{\sum_{t=1}^T g_{t,i}^2},
+\]
+其中 $D_\infty=\max_{t}\norm{\theta_t-\theta^\star}_\infty$。
+
+\vspace{.2cm}
+\textbf{这个 bound 好在哪？}
+\begin{itemize}
+  \item 若梯度稀疏（大部分坐标大部分时间为 0），$\sum_i\sqrt{\sum_t g_{t,i}^2}$ 远小于 $\sqrt{d\sum_{t,i}g_{t,i}^2}$。
+  \item 例如：每个样本只激活 $\log d$ 个坐标时，regret 为 $\mathcal{O}(\sqrt{T}\log d)$，而 SGD 为 $\mathcal{O}(\sqrt{dT})$。
+  \item 这正是\"自适应方法在稀疏/不均衡特征上更好\"的数学根源。
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Kronecker 积：定义与核心性质}
+\textbf{定义}：对 $A\in\R^{m\times n}$，$B\in\R^{p\times q}$，
+\[
+  A\otimes B=\begin{pmatrix}
+  a_{11}B & \cdots & a_{1n}B\\
+  \vdots & \ddots & \vdots\\
+  a_{m1}B & \cdots & a_{mn}B
+  \end{pmatrix}\in\R^{mp\times nq}.
+\]
+
+\vspace{.2cm}
+\textbf{核心性质}（需熟练掌握）：
+\begin{enumerate}
+  \item \textbf{混合积}：$(A\otimes B)(C\otimes D)=AC\otimes BD$（维度匹配时）。
+  \item \textbf{逆}：若 $A,B$ 可逆，则 $(A\otimes B)^{-1}=A^{-1}\otimes B^{-1}$。
+    \textit{证明}：$(A\otimes B)(A^{-1}\otimes B^{-1})=AA^{-1}\otimes BB^{-1}=I\otimes I=I$。
+  \item \textbf{矩阵函数}：对 $A,B\succ0$ 和标量函数 $\phi$，
+    $\phi(A\otimes B)=\phi(A)\otimes\phi(B)$ 不成立（一般情况）。但
+    若 $\phi(\cdot)=(\cdot)^\alpha$，则 $(A\otimes B)^\alpha=A^\alpha\otimes B^\alpha$。
+    \textit{证明}：$(A\otimes B)^\alpha=(Q_A\Lambda_A Q_A^\top\otimes Q_B\Lambda_B Q_B^\top)^\alpha
+    =(Q_A\otimes Q_B)(\Lambda_A\otimes\Lambda_B)^\alpha(Q_A\otimes Q_B)^\top
+    =Q_A\Lambda_A^\alpha Q_A^\top\otimes Q_B\Lambda_B^\alpha Q_B^\top=A^\alpha\otimes B^\alpha$。
+  \item \textbf{向量化}：$\vect(AXB)=(B^\top\otimes A)\vect(X)$。
+  \item \textbf{迹}：$\tr(A\otimes B)=\tr(A)\tr(B)$。
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{向量化恒等式的证明}
+\textbf{要证明}：$\vect(AXB)=(B^\top\otimes A)\vect(X)$，其中 $A\in\R^{m\times n}$，$X\in\R^{n\times p}$，$B\in\R^{p\times q}$。
+
+\vspace{.15cm}
+\textbf{证明}：记 $X=[x_1,\ldots,x_p]$（$x_j$ 为列），$B=(b_{jk})$。
+\[
+  AXB=A\left[\sum_{j=1}^p x_j b_{j1},\;\ldots,\;\sum_{j=1}^p x_j b_{jq}\right]
+     =\left[\sum_{j=1}^p (Ax_j)b_{j1},\;\ldots,\;\sum_{j=1}^p (Ax_j)b_{jq}\right].
+\]
+向量化后：
+\[
+  \vect(AXB)=\begin{pmatrix}
+  \sum_j (Ax_j)b_{j1}\\
+  \vdots\\
+  \sum_j (Ax_j)b_{jq}
+  \end{pmatrix}
+  =\begin{pmatrix}
+  b_{11}A & \cdots & b_{p1}A\\
+  \vdots & \ddots & \vdots\\
+  b_{1q}A & \cdots & b_{pq}A
+  \end{pmatrix}
+  \begin{pmatrix}x_1\\\vdots\\x_p\end{pmatrix}
+  =(B^\top\otimes A)\vect(X).
+\]
+最后一行的矩阵分块形式恰好是 $B^\top\otimes A$（注意 $b_{jk}$ 出现在第 $k$ 行第 $j$ 列）。
+
+\vspace{.15cm}
+\textbf{Shampoo 中的应用}（取 $B=R^{-1/4}$，注意 $R$ 对称）：
+\[
+  \vect(L^{-1/4}GR^{-1/4})=(R^{-1/4}\otimes L^{-1/4})\vect(G).
+\]
+\end{frame}
+
+% ======================================================================
+\section{科研路线}
+% ======================================================================
+
+\begin{frame}{做 first-order 优化科研：问好问题的框架}
+不要只问\"这个优化器快不快？\"——把每个方法分解为五个层次来分析：
+
+\vspace{.2cm}
+\begin{enumerate}
+  \item \textbf{假设层}：方法在什么条件下有理论保证？
+  \begin{itemize}
+    \item 凸/非凸/PL 条件/强凸？光滑性阶数？梯度有界？噪声分布假设？
+    \item 哪个假设是\"关键\"的（去掉后结果崩塌），哪个只是方便证明的？
+  \end{itemize}
+  \item \textbf{几何层}：算法隐式使用了什么度量？
+  \begin{itemize}
+    \item Bregman divergence 对应的 $\psi$ 是什么？
+    \item 预条件器 $P_t$ 的谱性质（条件数、低秩性、特征值分布）？
+  \end{itemize}
+  \item \textbf{复杂度层}：衡量什么？
+  \begin{itemize}
+    \item Oracle complexity（梯度调用次数）vs 内存 vs 通信 vs wall-clock。
+    \item 明确哪个是瓶颈，以及在什么规模下瓶颈转移。
+  \end{itemize}
+  \item \textbf{稳定性层}：数值上能否稳健运行？
+  \begin{itemize}
+    \item 有效学习率 $\eta/\sqrt{v_t}$ 有界且可控？damping 是否足够？是否有 NaN 风险？
+  \end{itemize}
+  \item \textbf{可验证层}：如何用实验检验理解？
+  \begin{itemize}
+    \item 最小可控实验：toy problem 上能否解释现象？
+    \item 中等规模验证：小模型上是否复现结果？
+    \item 实际收益：大模型上是否有工程改善？
+  \end{itemize}
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{如何阅读优化器论文：一个检查清单}
+读一篇一阶优化器论文时，逐项对照：
+\begin{enumerate}
+  \item \textbf{更新公式}：写清楚 $m_t,v_t,P_t$ 的递推和 $\theta_{t+1}$ 的计算。
+  \item \textbf{预条件器的数学形式}：$P_t$ 是对角？Kronecker 积？还是更一般的结构？谱性质如何？
+  \item \textbf{额外存储}：相比 SGD 多了什么状态？各占多少内存？能否用低秩近似压缩？
+  \item \textbf{理论保证}：convergence rate 是什么？需要什么假设？证明是否自洽？
+  \item \textbf{实验验证}：baseline 是 AdamW 还是 SGD？batch size 多大？是否做消融实验？
+  \item \textbf{工程实现}：需要哪些特殊算子（eigendecomposition、matrix root、custom kernel）？频率和精度如何？
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{一个可执行的 8 周学习计划}
+\begin{enumerate}
+  \item \textbf{第 1 周}：复习 GD/SGD/Momentum/Nesterov，手推下降引理和 GD 在强凸下的线性收敛。
+  \item \textbf{第 2 周}：学习 Mirror Descent 和 FTRL 框架，推导 AdaGrad 的 regret bound（对角情形）。
+  \item \textbf{第 3 周}：精读 Adam 论文 + AMSGrad 修正论文，实现 Adam/AdamW/AMSGrad，构造旋转二次函数实验，观察旋转敏感性和有效学习率。
+  \item \textbf{第 4 周}：学习矩阵分析与 Kronecker 积（所有性质的证明），推导 full-matrix AdaGrad 与 Shampoo 的关系。
+  \item \textbf{第 5 周}：实现矩阵版 Shampoo（简化版），比较不同 $K$（矩阵根频率）的影响，记录数值稳定性指标。
+  \item \textbf{第 6 周}：实现 SOAP 的简化版（固定基更新频率），做旋转二次函数 + 小 MLP 实验。
+  \item \textbf{第 7 周}：系统阅读 Shampoo 和 SOAP 论文 + Adafactor，写出各方法的假设—算法—证明—实验对照表。
+  \item \textbf{第 8 周}：写一页 research memo：选一个你认为可改进的方向，陈述问题、假设、算法方案、证明路线、实验设计。
+\end{enumerate}
+\end{frame}
+
+% ======================================================================
+\section{练习}
+% ======================================================================
+
+\begin{frame}{数学练习 A：基础证明}
+\begin{enumerate}
+  \item \textbf{下降引理证明}：设 $f$ 是 $L$-smooth。利用积分形式的 Taylor 公式：
+  \[
+    f(y)=f(x)+\ip{\grad f(x)}{y-x}+\int_0^1\ip{\grad f(x+t(y-x))-\grad f(x)}{y-x}\,dt,
+  \]
+  推导出 $f(y)\le f(x)+\ip{\grad f(x)}{y-x}+\frac{L}{2}\norm{y-x}^2$。
+  \item \textbf{预条件梯度的最优性}：证明
+  \[
+    d^\star=\argmin_{d}\left\{\ip{g}{d}+\frac{1}{2\eta}d^\top P^{-1}d\right\}
+  \]
+  的解为 $d^\star=-\eta P g$，其中 $P\succ0$。
+  \item \textbf{Adam 偏差修正推导}：假设 $\E[g_t]=\mu$（常数），从 $m_t=(1-\beta_1)\sum_{k=1}^t\beta_1^{t-k}g_k$ 出发，完整推导 $\E[m_t]=(1-\beta_1^t)\mu$。
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{数学练习 B：Kronecker 积与 Shampoo}
+\begin{enumerate}
+  \item \textbf{向量化恒等式}：对 $A\in\R^{m\times n}$，$X\in\R^{n\times p}$，$B\in\R^{p\times q}$，用逐元素方式验证 $\vect(AXB)=(B^\top\otimes A)\vect(X)$。（提示：先对 $p=q=1$ 验证，再推广。）
+  \item \textbf{Kronecker 积的矩阵函数}：若 $L,R\succ0$，证明 $(R\otimes L)^{-1/2}=R^{-1/2}\otimes L^{-1/2}$。提示：使用混合积性质和谱分解。
+  \item \textbf{解释 Shampoo}：证明在向量化空间中，更新 $\vect(L^{-1/4}GR^{-1/4})=(R^{-1/4}\otimes L^{-1/4})\vect(G)$。
+  \item \textbf{左右因子的统计意义}：设 $G\in\R^{n\times m}$ 的 SVD 为 $G=U\Sigma V^\top$。计算 $GG^\top$ 和 $G^\top G$ 的非零特征值与 $G$ 的奇异值的关系。解释为什么 $L_t$ 和 $R_t$ 分别捕获行空间和列空间的变化。
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{数学练习 C：科研思维训练}
+\begin{enumerate}
+  \item \textbf{旋转二次函数}：构造 $f(x)=\frac12 x^\top Q\diag(1,\kappa)Q^\top x$（$Q$ 为旋转矩阵）。
+  \begin{itemize}
+    \item 推导 GD 的最优步长和收敛因子，表达为 $\kappa$ 的函数。
+    \item 推导预条件 GD（用 $\diag(1,\kappa)^{-1}$ 为预条件器）的收敛因子。
+    \item 解释为什么预条件可以完全消除条件数的影响。
+  \end{itemize}
+  \item \textbf{Adam 的旋转敏感性}：令 $y=Q^\top x$（坐标变换）。写出在 $x$ 空间和 $y$ 空间中 Adam 的更新公式。
+  验证两者不等价（即 Adam 不是坐标不变的），并解释为什么。
+  \item \textbf{稀疏梯度的收益}：给出一个具体例子（$\ell_2$ 正则化的稀疏线性回归），
+  计算对角 AdaGrad 的 regret bound 与 SGD 的 regret bound，量化自适应的收益。
+  \item \textbf{有效学习率的振荡}：构造一个一维例子，使得 Adam 的 $\eta/\sqrt{v_t}$ 在无限步上不收敛（提示：交替使用大梯度和小梯度）。说明为什么这可能导致不收敛。
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{工程练习 A：从 toy problem 建立直觉}
+\textbf{环境}：PyTorch 或 NumPy。所有实验应可复现（固定随机种子）。
+
+\begin{enumerate}
+  \item \textbf{二维旋转二次函数}：
+  \[
+    f(x)=\frac12 x^\top Q\diag(1,\kappa)Q^\top x,\qquad
+    Q=\begin{pmatrix}\cos\theta & -\sin\theta\\\sin\theta & \cos\theta\end{pmatrix}.
+  \]
+  \begin{itemize}
+    \item 取 $\kappa=100$，$\theta=45^\circ$，比较 SGD、Momentum ($\beta=0.9$)、Adam 的轨迹。
+    \item 画等高线图，在图上叠加优化器轨迹（用 matplotlib）。
+  \end{itemize}
+  \item \textbf{旋转敏感性}：固定 $\kappa=100$，变化 $\theta\in\{0^\circ,30^\circ,45^\circ,60^\circ,90^\circ\}$，
+  记录每种优化器到达 $f(x)\le10^{-5}$ 所需的步数。画出\"步数 vs $\theta$ \"的图。
+  \item \textbf{有效学习率可视化}：对每个坐标画出 $\eta/(\sqrt{\hat v_{t,i}}+\eps)$ 随 $t$ 的曲线。
+  \item \textbf{单元测试}：当 $Q=I$（无旋转，$\theta=0^\circ$）且 $\kappa=1000$ 时，
+  验证 Adam 在最差坐标上的有效学习率是最好坐标上的约 $\sqrt{1000}\approx31.6$ 倍。
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{工程练习 B：实现简化 Shampoo}
+\textbf{任务}：对单层线性网络 $f(W;x)=Wx$（$W\in\R^{n\times m}$），实现 Shampoo。
+
+\begin{enumerate}
+  \item 维护 $L_t$ 和 $R_t$（使用 EMA 更新或累积和更新）：
+  \[
+    L_t\leftarrow\beta L_{t-1}+(1-\beta)G_t G_t^\top,\qquad
+    R_t\leftarrow\beta R_{t-1}+(1-\beta)G_t^\top G_t.
+  \]
+  \item 每 $K$ 步使用 \texttt{torch.linalg.eigh} 计算 $L_t^{-1/4}$ 和 $R_t^{-1/4}$。
+  \item 实现更新：$W_{t+1}=W_t-\eta L_t^{-1/4}G_t R_t^{-1/4}$。
+  \item \textbf{数值稳定性检查}：
+  \begin{itemize}
+    \item 每 $K$ 步记录 $\lambda_{\min}(L_t),\lambda_{\max}(L_t)$ 和条件数。
+    \item 确保 damping $\eps$ 足够大以防止 $\lambda_{\min}$ 过小。
+    \item 检查更新后是否出现 NaN 或 Inf。
+  \end{itemize}
+  \item 在 MNIST 上的两层 MLP 比较 AdamW 与 Shampoo 的 loss 曲线和 wall-clock。
+  \item 消融实验：比较 $K\in\{1,10,50,100,500\}$ 的影响。
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{工程练习 C：实现简化 SOAP}
+\textbf{任务}：在 Shampoo 的基础上实现 SOAP。
+
+\vspace{.2cm}
+\textbf{核心实现}：
+\begin{enumerate}
+  \item 每 $K$ 步从 $L_t,R_t$ 计算特征基 $Q_L,Q_R$（eigendecomposition）。
+  \item 每步计算旋转梯度：$\tilde G_t=Q_L^\top G_t Q_R$。
+  \item 在 $\tilde G_t$ 坐标中维护 Adam 的 $\tilde m,\tilde v$（逐元素 EMA）。
+  \item 计算 $\tilde\Delta_t=\hat{\tilde m}_t/(\sqrt{\hat{\tilde v}_t}+\eps)$。
+  \item 旋回原空间：$\Delta W_t=Q_L\tilde\Delta_t Q_R^\top$。
+  \item \textbf{关键细节}：当 $Q_L,Q_R$ 更新时，需将旧的 $\tilde m,\tilde v$ 转换到新基：
+  \[
+    \tilde m^{\text{new}}=(Q_L^{\text{new}})^\top Q_L^{\text{old}}\;\tilde m^{\text{old}}\;(Q_R^{\text{old}})^\top Q_R^{\text{new}}.
+  \]
+\end{enumerate}
+
+\vspace{.2cm}
+\textbf{消融实验}：
+\begin{itemize}
+  \item 固定 $Q_L=I,Q_R=I$（退化为 Adam）vs 正常 SOAP。
+  \item 变化 $K\in\{10,50,200\}$，记录 loss 曲线与 wall-clock。
+  \item 是否做\"基转换\"步骤（直接丢弃旧 $\tilde m,\tilde v$ 重置为 0）vs 正确转换。
+\end{itemize}
+\end{frame}
+
+% ======================================================================
+\section{补充数学}
+% ======================================================================
+
+\begin{frame}{Newton-Schulz 迭代的推导（补充材料）}
+\textbf{目标}：不用特征分解，迭代计算 $A^{-1/2}$（$A\succ0$，已知 $\norm{I-A}<1$）。
+
+\vspace{.2cm}
+\textbf{思路}：从恒等式 $A^{-1/2}=(I-(I-A))^{-1/2}$ 出发。利用二项级数在矩阵情形的推广。
+
+\vspace{.15cm}
+\textbf{迭代格式}（耦合迭代）：
+\[
+  \begin{aligned}
+  X_{k+1} &= X_k\left(\frac{3}{2}I-\frac{1}{2}Y_k X_k\right),\\
+  Y_{k+1} &= \left(\frac{3}{2}I-\frac{1}{2}Y_k X_k\right)Y_k,
+  \end{aligned}
+\]
+其中 $X_k\to A^{-1/2}$，$Y_k\to A^{1/2}$。初始 $X_0=I$，$Y_0=A$。
+
+\vspace{.15cm}
+\textbf{简化版}（只追踪 $X_k$）：
+\[
+  X_{k+1}=\frac{3}{2}X_k-\frac{1}{2}X_k^3 A,\qquad X_0=\frac{1}{\norm{A}_F}A.
+\]
+收敛是二次的（每步有效位数翻倍），但需归一化预处理以确保 $\norm{I-X_0 A X_0^\top}<1$。
+
+\vspace{.2cm}
+\textbf{Shampoo 中的实践}：先用 $A/\tr(A)$ 做初始缩放，跑 5--10 次 Newton-Schulz 迭代即可获得足够精度。
+\end{frame}
+
+\begin{frame}{Bregman Divergence 的性质（补充材料）}
+定义：
+\[
+  D_\psi(x,y)=\psi(x)-\psi(y)-\ip{\grad\psi(y)}{x-y}.
+\]
+
+\vspace{.15cm}
+\textbf{关键性质}：
+\begin{enumerate}
+  \item \textbf{非负性}：由 $\psi$ 的凸性，$D_\psi(x,y)\ge0$。若 $\psi$ 严格凸，则 $D_\psi(x,y)=0\iff x=y$。
+  \item \textbf{不对称性}：一般 $D_\psi(x,y)\neq D_\psi(y,x)$（除非 $\psi$ 是二次函数）。
+  \item \textbf{三点恒等式（核心工具）}：
+  \[
+    D_\psi(z,x)-D_\psi(z,y)-D_\psi(y,x)=\ip{\grad\psi(y)-\grad\psi(x)}{z-y}.
+  \]
+  \textit{推导}：直接展开三个 Bregman divergence 的定义并消去 $\psi$ 项。
+  \item \textbf{广义勾股定理}：对 Bregman projection $x^\star=\argmin_{x\in C}D_\psi(x,y)$，有
+  \[
+    D_\psi(z,y)\ge D_\psi(z,x^\star)+D_\psi(x^\star,y),\quad\forall z\in C.
+  \]
+\end{enumerate}
+
+\vspace{.15cm}
+\textbf{常用实例}：
+\begin{itemize}
+  \item $\psi(x)=\frac12\norm{x}_2^2$：$D_\psi(x,y)=\frac12\norm{x-y}_2^2$（Euclidean，镜像下降退化为 SGD）。
+  \item $\psi(x)=\sum_i x_i\log x_i$（负熵）：$D_\psi(x,y)=\sum_i(x_i\log\frac{x_i}{y_i}-x_i+y_i)$（用于单纯形上的优化，对应 Exponentiated Gradient）。
+\end{itemize}
+\end{frame}
+
+\begin{frame}{Fisher 信息矩阵与自然梯度（补充材料）}
+\textbf{概率模型}：$p(y\mid x;\theta)$，负对数似然 $\ell(\theta)=-\log p(y\mid x;\theta)$。
+
+\vspace{.2cm}
+\textbf{Fisher 信息矩阵}：
+\[
+  \mathcal{I}(\theta)=\E_{y\sim p(\cdot\mid x;\theta)}\!\left[\grad_\theta\log p\cdot\grad_\theta\log p^\top\right]
+                    =\E[g g^\top].
+\]
+在 well-specified 模型下，$\mathcal{I}(\theta)=\E[\grad^2\ell(\theta)]$（Bartlett 第二恒等式）。
+
+\vspace{.2cm}
+\textbf{自然梯度下降}（Natural Gradient Descent）：
+\[
+  \theta_{t+1}=\theta_t-\eta\,\mathcal{I}(\theta_t)^{-1}\grad\ell(\theta_t).
+\]
+在参数空间的 Fisher 度量下走最陡方向。
+
+\vspace{.2cm}
+\textbf{与自适应方法的联系}：
+\begin{itemize}
+  \item Full-matrix AdaGrad 用 $\sum g_s g_s^\top$ 的经验估计代替 $\mathcal{I}(\theta)$。
+  \item Adam 用 diag 近似 $\mathcal{I}(\theta)$。
+  \item Shampoo/SOAP 用 Kronecker 结构化近似 $\mathcal{I}(\theta)$。
+  \item 这些都是一阶方法在\"模仿\"二阶自然梯度的几何。
+\end{itemize}
+\end{frame}
+
+% ======================================================================
+\section{阅读与参考}
+% ======================================================================
+
+\begin{frame}{建议阅读顺序与阅读重点}
+\begin{enumerate}
+  \item \textbf{Kingma and Ba (2014)} — Adam: A Method for Stochastic Optimization.
+  \begin{itemize}
+    \item 重点：算法定义、偏差修正推导、两个超参数 $\beta_1,\beta_2$ 的选择。
+    \item 注意：收敛证明有误，需配合 Reddi et al. (2018) 阅读。
+  \end{itemize}
+  \item \textbf{Loshchilov and Hutter (2017)} — Decoupled Weight Decay Regularization.
+  \begin{itemize}
+    \item 重点：L2 正则与 weight decay 在自适应优化器中的不等价性。
+  \end{itemize}
+  \item \textbf{Duchi, Hazan, and Singer (2011)} — Adaptive Subgradient Methods.
+  \begin{itemize}
+    \item 重点：Regret bound 的完整推导、对角与 full-matrix 两种形式、稀疏性下的优势。
+  \end{itemize}
+  \item \textbf{Gupta, Koren, and Singer (2018)} — Shampoo: Preconditioned Stochastic Tensor Optimization.
+  \begin{itemize}
+    \item 重点：Kronecker 近似的动机、$-1/(2p)$ 指数的来源、矩阵根的高效计算。
+  \end{itemize}
+  \item \textbf{Shazeer and Stern (2018)} — Adafactor: Adaptive Learning Rates with Sublinear Memory Cost.
+  \begin{itemize}
+    \item 重点：秩-1 近似的技巧、如何将 Shampoo 的内存从 $\mathcal{O}(n^2+m^2)$ 降至 $\mathcal{O}(n+m)$。
+  \end{itemize}
+  \item \textbf{Vyas et al. (2024)} — SOAP: Improving and Stabilizing Shampoo using Adam.
+  \begin{itemize}
+    \item 重点：特征基中运行 Adam 的动机、基变换时状态迁移的方法、实验设置。
+  \end{itemize}
+\end{enumerate}
+\end{frame}
+
+\begin{frame}{一句话总结}
+\begin{block}{Adam}
+用 EMA 估计梯度的一阶矩方向与逐坐标二阶矩尺度，形成对角预条件器。
+优势是便宜稳定，代价是对坐标旋转敏感且无法捕捉坐标相关性。
+\end{block}
+\begin{block}{Shampoo}
+用 Kronecker 积结构将 full-matrix 预条件分解为各 mode 的矩阵因子，
+捕捉参数坐标间的相关性，但缺少 EMA 的时间平滑且矩阵根计算昂贵。
+\end{block}
+\begin{block}{SOAP}
+取 Shampoo 特征分解给出的\"好坐标系\"（特征基），
+在该基内运行 Adam 式 EMA 自适应。
+融合了结构化几何（Shampoo）与时间平滑（Adam）两个优势。
+\end{block}
+\end{frame}
+
+\begin{frame}{参考文献}
+\footnotesize
+\begin{thebibliography}{99}
+
+\bibitem{adam}
+Diederik P. Kingma and Jimmy Ba.
+\newblock Adam: A Method for Stochastic Optimization.
+\newblock \textit{ICLR}, 2015. arXiv:1412.6980.
+
+\bibitem{adamw}
+Ilya Loshchilov and Frank Hutter.
+\newblock Decoupled Weight Decay Regularization.
+\newblock \textit{ICLR}, 2019. arXiv:1711.05101.
+
+\bibitem{adagrad}
+John Duchi, Elad Hazan, and Yoram Singer.
+\newblock Adaptive Subgradient Methods for Online Learning and Stochastic Optimization.
+\newblock \textit{Journal of Machine Learning Research}, 12:2121--2159, 2011.
+
+\bibitem{amsgrad}
+Sashank J. Reddi, Satyen Kale, and Sanjiv Kumar.
+\newblock On the Convergence of Adam and Beyond.
+\newblock \textit{ICLR}, 2018.
+
+\bibitem{shampoo}
+Vineet Gupta, Tomer Koren, and Yoram Singer.
+\newblock Shampoo: Preconditioned Stochastic Tensor Optimization.
+\newblock \textit{ICML}, 2018. arXiv:1802.09568.
+
+\bibitem{adafactor}
+Noam Shazeer and Mitchell Stern.
+\newblock Adafactor: Adaptive Learning Rates with Sublinear Memory Cost.
+\newblock \textit{ICML}, 2018. arXiv:1804.04235.
+
+\bibitem{soap}
+Nikhil Vyas, Depen Morwani, Rosie Zhao, Mujin Kwun, Itai Shapira, David Brandfonbrener, Lucas Janson, and Sham Kakade.
+\newblock SOAP: Improving and Stabilizing Shampoo using Adam.
+\newblock arXiv:2409.11321, 2024.
+
+\bibitem{martens2020new}
+James Martens.
+\newblock New Insights and Perspectives on the Natural Gradient Method.
+\newblock \textit{Journal of Machine Learning Research}, 21(146):1--76, 2020.
+
+\bibitem{bubeck2015convex}
+S\'ebastien Bubeck.
+\newblock Convex Optimization: Algorithms and Complexity.
+\newblock \textit{Foundations and Trends in Machine Learning}, 8(3--4):231--357, 2015.
+
+\end{thebibliography}
+\end{frame}
+
+\begin{frame}{结束页}
+\centering
+\Large
+从二维旋转二次函数实验开始。\\[0.3cm]
+如果你能从轨迹图中说清楚这三句话：\\[0.2cm]
+\begin{tikzpicture}
+  \node[draw, rounded corners, fill=blue!5, text width=11cm, align=left, font=\normalsize] {
+    \textbf{1.} 「Adam 在最陡方向用对角近似，所以旋转后性能退化」\\
+    \textbf{2.} 「Shampoo 捕捉了 Hessian 的结构，用 Kronecker 积近似消去了旋转」\\
+    \textbf{3.} 「SOAP 在 Shampoo 的自然基里重新跑 Adam，两者优势叠加」
+  };
+\end{tikzpicture}
+\vspace{.3cm}
+\normalsize
+这条线就真正入门了。之后去读论文、做实验、找 gap。
+\end{frame}
+
+\end{document}

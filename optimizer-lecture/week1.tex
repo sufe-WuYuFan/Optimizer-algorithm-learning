@@ -1,0 +1,803 @@
+% !TEX program = xelatex
+\documentclass[12pt,a4paper]{ctexart}
+
+% ============ Packages ============
+\usepackage{amsmath,amssymb,mathtools,bm,cancel}
+\usepackage{amsthm}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue]{hyperref}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{tikz}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+% ============ Theorems ============
+\theoremstyle{definition}
+\newtheorem{definition}{定义}[section]
+\newtheorem{theorem}{定理}[section]
+\newtheorem{lemma}[theorem]{引理}
+\newtheorem{corollary}[theorem]{推论}
+\newtheorem{proposition}[theorem]{命题}
+\newtheorem{remark}{注记}[section]
+\newtheorem{example}{例}[section]
+\theoremstyle{plain}
+\newtheorem*{proof*}{证明}
+
+% ============ Math Notation ============
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\vect}{\operatorname{vec}}
+\newcommand{\eps}{\varepsilon}
+\newcommand{\grad}{\nabla}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\ip}[2]{\left\langle #1,#2 \right\rangle}
+\newcommand{\Id}{I}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator*{\argmax}{arg\,max}
+
+% ============ Formatting ============
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{第一周：GD/SGD 的理论基石}
+\fancyhead[R]{\thepage}
+\fancyfoot[C]{}
+\renewcommand{\headrulewidth}{0.5pt}
+
+\titleformat{\section}{\Large\bfseries}{}{0em}{}
+\titleformat{\subsection}{\large\bfseries}{}{0em}{}
+
+% ============ Document ============
+\begin{document}
+
+\begin{center}
+\Large\textbf{第一周：梯度下降与随机梯度下降的理论基石}
+
+\vspace{1cm}
+\normalsize
+\textbf{学习目标：}深入理解梯度下降的收敛理论，掌握下降引理的推导，\\
+了解条件数如何决定收敛速度。
+
+\vspace{0.3cm}
+\textit{建议搭配 Bubeck (2015) \S 3 和 Nesterov (2018) \S 1 阅读。}
+\end{center}
+
+\vspace{0.5cm}
+\rule{\textwidth}{0.5pt}
+
+% ======================================================================
+\section{基本设定与记号}
+% ======================================================================
+
+\subsection{优化问题}
+
+我们考虑无约束连续优化问题：
+\begin{equation}\label{eq:problem}
+  \min_{\theta \in \R^d} \; f(\theta),
+\end{equation}
+其中 $f:\R^d \to \R$ 是目标函数（在机器学习中通常为损失函数）。
+
+\begin{definition}[梯度]
+  函数 $f$ 在点 $\theta$ 处的\textbf{梯度}（gradient）$\grad f(\theta) \in \R^d$ 是 $f$ 在该处的方向导数的最陡上升方向：
+  \begin{equation}
+    \grad f(\theta) = \left[\frac{\partial f}{\partial \theta_1}(\theta), \ldots, \frac{\partial f}{\partial \theta_d}(\theta)\right]^\top.
+  \end{equation}
+  梯度的每一个分量是 $f$ 关于对应坐标的偏导数。
+\end{definition}
+
+\begin{definition}[Hessian 矩阵]
+  若 $f$ 二阶可微，则其 \textbf{Hessian 矩阵} $\grad^2 f(\theta) \in \R^{d \times d}$ 由所有二阶偏导数构成：
+  \begin{equation}
+    [\grad^2 f(\theta)]_{ij} = \frac{\partial^2 f}{\partial \theta_i \partial \theta_j}(\theta).
+  \end{equation}
+  由 Schwarz 定理（混合偏导数的对称性），若 $f$ 二阶连续可微，则 $\grad^2 f(\theta)$ 是对称矩阵。
+\end{definition}
+
+\subsection{二次函数是理解的钥匙}
+
+在优化理论中，二次函数
+\begin{equation}\label{eq:quadratic}
+  f(\theta) = \frac{1}{2}\theta^\top A \theta + b^\top \theta + c,\qquad A \in \R^{d\times d},\; A \succ 0,
+\end{equation}
+是最重要的分析工具。原因有三：
+\begin{enumerate}[label=(\arabic*)]
+  \item 光滑函数的 Taylor 展开在局部近似为二次函数（这是所有二阶分析的基础）；
+  \item 许多收敛性结论的「最坏情形」由某个二次函数达到；
+  \item 二次函数的梯度 $\grad f(\theta) = A\theta + b$ 和 Hessian $\grad^2 f(\theta) = A$ 结构清晰，便于计算。
+\end{enumerate}
+
+对二次函数 $f(\theta) = \frac12\theta^\top A\theta$（令 $b=0, c=0$ 不失一般性，因为平移不影响优化动态），梯度下降的迭代为：
+\begin{equation}
+  \theta_{t+1} = \theta_t - \eta A \theta_t = (I - \eta A)\theta_t.
+\end{equation}
+迭代 $T$ 步后：$\theta_T = (I - \eta A)^T \theta_0$。因此收敛速度完全由 $I - \eta A$ 的谱半径决定。
+
+% ======================================================================
+\section{光滑性与凸性：两个基本假设}
+% ======================================================================
+
+\subsection{$L$-光滑性 (Smoothness)}
+
+光滑性（又称 Lipschitz 连续梯度）限制了函数梯度变化的剧烈程度。
+
+\begin{definition}[$L$-光滑]\label{def:smooth}
+  函数 $f:\R^d \to \R$ 称为 $L$-\textbf{光滑}（$L$-smooth），如果存在常数 $L > 0$，使得对任意 $\theta, \theta' \in \R^d$，有
+  \begin{equation}\label{eq:smooth1}
+    \norm{\grad f(\theta) - \grad f(\theta')} \le L \norm{\theta - \theta'}.
+  \end{equation}
+\end{definition}
+
+\begin{theorem}[光滑性的三个等价刻画]\label{thm:smooth-equiv}
+  设 $f$ 为连续可微函数。以下三个命题等价：
+  \begin{enumerate}[label=(\roman*)]
+    \item $f$ 满足 \eqref{eq:smooth1}（梯度 $L$-Lipschitz 连续）。
+    \item 对任意 $\theta, \theta' \in \R^d$，
+      \begin{equation}\label{eq:smooth2}
+        f(\theta') \le f(\theta) + \ip{\grad f(\theta)}{\theta' - \theta} + \frac{L}{2}\norm{\theta' - \theta}^2.
+      \end{equation}
+    \item 对任意 $\theta, \theta' \in \R^d$，
+      \begin{equation}\label{eq:smooth3}
+        \ip{\grad f(\theta') - \grad f(\theta)}{\theta' - \theta} \le L \norm{\theta' - \theta}^2.
+      \end{equation}
+  \end{enumerate}
+  若 $f$ 二阶可微，则以上所有命题等价于 $\grad^2 f(\theta) \preceq L I$（对所有 $\theta$），即 Hessian 的最大特征值不超过 $L$。
+\end{theorem}
+
+\begin{proof*}[$(i) \Rightarrow (ii)$ 的证明]
+  这是下降引理的核心推导。设 $\theta, \theta' \in \R^d$ 任意。考虑连接 $\theta$ 和 $\theta'$ 的线段，
+  对函数 $h(t) = f(\theta + t(\theta' - \theta))$（$t \in [0,1]$）应用微积分基本定理：
+  \begin{equation}\label{eq:fundamental}
+    \begin{aligned}
+      f(\theta') - f(\theta) &= h(1) - h(0) = \int_0^1 h'(t)\,dt \\
+      &= \int_0^1 \ip{\grad f(\theta + t(\theta' - \theta))}{\theta' - \theta}\,dt.
+    \end{aligned}
+  \end{equation}
+  从被积函数中加减 $\grad f(\theta)$：
+  \begin{equation}
+    \begin{aligned}
+      f(\theta') - f(\theta) &= \int_0^1 \ip{\grad f(\theta)}{\theta' - \theta}\,dt
+        + \int_0^1 \ip{\grad f(\theta + t(\theta' - \theta)) - \grad f(\theta)}{\theta' - \theta}\,dt \\[4pt]
+      &= \ip{\grad f(\theta)}{\theta' - \theta}
+        + \int_0^1 \ip{\grad f(\theta + t(\theta' - \theta)) - \grad f(\theta)}{\theta' - \theta}\,dt.
+    \end{aligned}
+  \end{equation}
+  对积分内的内积应用 Cauchy-Schwarz 不等式，然后利用 $(i)$ 的假设：
+  \begin{equation}
+    \begin{aligned}
+      \ip{\grad f(\theta + t(\theta' - \theta)) - \grad f(\theta)}{\theta' - \theta}
+      &\le \norm{\grad f(\theta + t(\theta' - \theta)) - \grad f(\theta)} \cdot \norm{\theta' - \theta} \\[4pt]
+      &\le L \norm{t(\theta' - \theta)} \cdot \norm{\theta' - \theta} \\[4pt]
+      &= L t \norm{\theta' - \theta}^2.
+    \end{aligned}
+  \end{equation}
+  代回积分：
+  \begin{equation}
+    f(\theta') - f(\theta) \le \ip{\grad f(\theta)}{\theta' - \theta} + \int_0^1 L t \norm{\theta' - \theta}^2\,dt
+    = \ip{\grad f(\theta)}{\theta' - \theta} + \frac{L}{2} \norm{\theta' - \theta}^2.
+  \end{equation}
+  这正是 \eqref{eq:smooth2}。$\square$
+\end{proof*}
+
+\begin{proof*}[$(ii) \Rightarrow (iii)$ 的简要思路]
+  写出两个对称的不等式：
+  \begin{align*}
+    f(\theta') &\le f(\theta) + \ip{\grad f(\theta)}{\theta' - \theta} + \frac{L}{2}\norm{\theta' - \theta}^2, \\
+    f(\theta) &\le f(\theta') + \ip{\grad f(\theta')}{\theta - \theta'} + \frac{L}{2}\norm{\theta - \theta'}^2.
+  \end{align*}
+  将两式相加，左边得到 $f(\theta') + f(\theta)$，右边合并后即得到 $(iii)$。
+\end{proof*}
+
+\begin{proof*}[二阶情形的等价性]
+  若 $f$ 二阶可微，对任意 $\theta$ 和方向 $v$，构造辅助函数 $\phi(t) = f(\theta + tv)$。
+  则 $\phi''(t) = v^\top \grad^2 f(\theta + tv) v$。由 $L$-光滑性，
+  \begin{equation}
+    |\phi'(s) - \phi'(t)| = \left|\int_s^t \phi''(\tau)d\tau\right| \le L|s-t|\cdot \norm{v}^2.
+  \end{equation}
+  取极限可得 $v^\top \grad^2 f(\theta) v \le L\norm{v}^2$，即 $\grad^2 f(\theta) \preceq L I$。
+\end{proof*}
+
+\subsection{$\mu$-强凸性 (Strong Convexity)}
+
+\begin{definition}[$\mu$-强凸]\label{def:strconv}
+  函数 $f: \R^d \to \R$ 称为 $\mu$-\textbf{强凸}（$\mu$-strongly convex），如果存在 $\mu > 0$，使得对任意 $\theta, \theta' \in \R^d$，有
+  \begin{equation}\label{eq:strconv}
+    f(\theta') \ge f(\theta) + \ip{\grad f(\theta)}{\theta' - \theta} + \frac{\mu}{2}\norm{\theta' - \theta}^2.
+  \end{equation}
+\end{definition}
+
+\textbf{直观理解}：将 $f$ 的下界从线性函数提升为二次函数。在任意点处，$f$ 位于一个曲率为 $\mu$ 的抛物面之上。
+
+\begin{theorem}[强凸性的等价刻画]\label{thm:strconv-equiv}
+  设 $f$ 为连续可微函数。以下命题等价：
+  \begin{enumerate}[label=(\roman*)]
+    \item $f$ 是 $\mu$-强凸的。
+    \item 对任意 $\theta, \theta' \in \R^d$，
+      \begin{equation}\label{eq:strconv-coco}
+        \ip{\grad f(\theta') - \grad f(\theta)}{\theta' - \theta} \ge \mu \norm{\theta' - \theta}^2.
+      \end{equation}
+    \item $f$ 满足 Polyak--Łojasiewicz (PL) 不等式的一个强化版本。
+  \end{enumerate}
+  若 $f$ 二阶可微，则以上等价于 $\grad^2 f(\theta) \succeq \mu I$（对所有 $\theta$），即 Hessian 的最小特征值至少为 $\mu$。
+\end{theorem}
+
+\begin{proof*}[强凸函数梯度单调性的证明]
+  从 \eqref{eq:strconv} 写出对称不等式并相加：
+  \begin{align*}
+    f(\theta') &\ge f(\theta) + \ip{\grad f(\theta)}{\theta' - \theta} + \frac{\mu}{2}\norm{\theta' - \theta}^2, \\
+    f(\theta) &\ge f(\theta') + \ip{\grad f(\theta')}{\theta - \theta'} + \frac{\mu}{2}\norm{\theta - \theta'}^2.
+  \end{align*}
+  两式相加：
+  \begin{equation}
+    \cancel{f(\theta') + f(\theta)} \ge \cancel{f(\theta) + f(\theta')}
+    + \ip{\grad f(\theta) - \grad f(\theta')}{\theta' - \theta} + \mu\norm{\theta' - \theta}^2.
+  \end{equation}
+  整理得到 \eqref{eq:strconv-coco}。$\square$
+\end{proof*}
+
+\subsection{条件数 (Condition Number)}
+
+\begin{definition}[条件数]
+  设 $f$ 是 $\mu$-强凸且 $L$-光滑的函数。其\textbf{条件数}定义为：
+  \begin{equation}\label{eq:condition}
+    \kappa := \frac{L}{\mu} \ge 1.
+  \end{equation}
+\end{definition}
+
+对于二次函数 $f(\theta) = \frac12 \theta^\top A \theta$（$A \succ 0$）：
+\begin{itemize}
+  \item $L = \lambda_{\max}(A)$（最大特征值）
+  \item $\mu = \lambda_{\min}(A)$（最小特征值）
+  \item $\kappa = \lambda_{\max} / \lambda_{\min}$
+\end{itemize}
+
+\textbf{几何意义}：条件数描述了函数在不同方向上曲率的差异。$\kappa$ 很大意味着存在一个「窄谷」——一个方向非常陡峭而另一个方向非常平缓。下图展示 $\kappa=10$ 的二次函数的等高线图：
+
+\begin{center}
+\begin{tikzpicture}[scale=0.7]
+  % Ellipse representing κ=10 quadratic
+  \draw[very thin, gray!30] (-5,-5) grid (5,5);
+  \draw[->] (-5.5,0) -- (5.5,0) node[right] {$\theta_1$};
+  \draw[->] (0,-5.5) -- (0,5.5) node[above] {$\theta_2$};
+  \foreach \i in {0.5,1,...,5} {
+    \draw[blue!40, thick] (0,0) ellipse ({\i*0.8} and {\i*0.8/3.16});
+  }
+  \node at (0,-6) {$\kappa = 10$：长轴/短轴比 $= \sqrt{10} \approx 3.16$};
+\end{tikzpicture}
+\end{center}
+
+\textbf{为什么条件数重要？} 梯度下降的收敛速度表达式为 $(1 - 1/\kappa)^T$ 或类似的缩减因子。
+当 $\kappa = 100$ 时，要缩小误差到 $\eps$ 需要 $\mathcal{O}(\kappa \log(1/\eps))$ 次迭代——
+$\kappa$ 直接乘以迭代次数。这就是为什么病态问题（$\kappa$ 大）是优化中的核心挑战。
+
+% ======================================================================
+\section{梯度下降的收敛分析}
+% ======================================================================
+
+\subsection{下降引理与基本不等式}
+
+\begin{lemma}[下降引理，又称 Descent Lemma]\label{lem:descent}
+  设 $f$ 为 $L$-光滑函数。取步长 $\eta > 0$，则梯度下降迭代
+  $\theta_{t+1} = \theta_t - \eta \grad f(\theta_t)$ 满足：
+  \begin{equation}\label{eq:descent}
+    f(\theta_{t+1}) \le f(\theta_t) - \eta\left(1 - \frac{L\eta}{2}\right) \norm{\grad f(\theta_t)}^2.
+  \end{equation}
+\end{lemma}
+
+\begin{proof*}
+  在光滑性不等式 \eqref{eq:smooth2} 中代入 $\theta = \theta_t$ 和 $\theta' = \theta_{t+1} = \theta_t - \eta \grad f(\theta_t)$：
+  \begin{equation}
+    \begin{aligned}
+      f(\theta_{t+1})
+      &\le f(\theta_t) + \ip{\grad f(\theta_t)}{\theta_{t+1} - \theta_t}
+        + \frac{L}{2} \norm{\theta_{t+1} - \theta_t}^2 \\[4pt]
+      &= f(\theta_t) + \ip{\grad f(\theta_t)}{-\eta \grad f(\theta_t)}
+        + \frac{L}{2} \norm{-\eta \grad f(\theta_t)}^2 \\[4pt]
+      &= f(\theta_t) - \eta \norm{\grad f(\theta_t)}^2 + \frac{L\eta^2}{2} \norm{\grad f(\theta_t)}^2 \\[4pt]
+      &= f(\theta_t) - \eta\left(1 - \frac{L\eta}{2}\right) \norm{\grad f(\theta_t)}^2.
+    \end{aligned}
+  \end{equation}
+  $\square$
+\end{proof*}
+
+\textbf{关键观察}：要使函数值下降，需要括号内的量大于 0，即 $\eta < 2/L$。
+最速下降在 $\eta = 1/L$ 处达到，此时每步至少下降 $\frac{1}{2L} \norm{\grad f(\theta_t)}^2$。
+
+\begin{center}
+\begin{tikzpicture}[scale=0.8]
+  \draw[->] (0,0) -- (6.5,0) node[right] {$\eta$};
+  \draw[->] (0,0) -- (0,4.5) node[above] {$\eta(1 - \frac{L\eta}{2})$};
+  \draw[domain=0:6, smooth, thick, blue] plot (\x, {\x*(1 - \x/4)});
+  \draw[dashed] (2,0) node[below] {$\frac{1}{L}$} -- (2,1);
+  \draw[dashed] (4,0) node[below] {$\frac{2}{L}$} -- (4,0);
+  \node[above right, blue] at (2,1) {最大值};
+  \node at (3,2.5) {下降区域: $\eta \in (0, 2/L)$};
+  \node at (5,1) {不保证下降};
+\end{tikzpicture}
+\end{center}
+
+\subsection{凸情形下的收敛率}
+
+\begin{theorem}[GD 在凸且光滑条件下的次线性收敛]\label{thm:gd-convex}
+  设 $f$ 为 $L$-光滑且 convex 函数。设 $\theta^\star \in \argmin f$（假设存在）。
+  取固定步长 $\eta = 1/L$，则经过 $T$ 步梯度下降后：
+  \begin{equation}\label{eq:gd-convex-rate}
+    f(\theta_T) - f(\theta^\star) \le \frac{L \norm{\theta_0 - \theta^\star}^2}{2T}.
+  \end{equation}
+  即收敛率为 $\mathcal{O}(1/T)$。
+\end{theorem}
+
+\begin{proof*}
+  由下降引理（取 $\eta = 1/L$）：
+  \begin{equation}
+    f(\theta_{t+1}) \le f(\theta_t) - \frac{1}{2L} \norm{\grad f(\theta_t)}^2. \tag{1}
+  \end{equation}
+  由凸性，$f(\theta^\star) \ge f(\theta_t) + \ip{\grad f(\theta_t)}{\theta^\star - \theta_t}$，因此：
+  \begin{equation}
+    f(\theta_t) - f(\theta^\star) \le \ip{\grad f(\theta_t)}{\theta_t - \theta^\star}. \tag{2}
+  \end{equation}
+
+  现在考虑距离平方的演化：
+  \begin{equation}
+    \begin{aligned}
+      \norm{\theta_{t+1} - \theta^\star}^2
+      &= \norm{\theta_t - \frac{1}{L}\grad f(\theta_t) - \theta^\star}^2 \\
+      &= \norm{\theta_t - \theta^\star}^2
+        - \frac{2}{L} \ip{\grad f(\theta_t)}{\theta_t - \theta^\star}
+        + \frac{1}{L^2} \norm{\grad f(\theta_t)}^2.
+    \end{aligned}
+  \end{equation}
+  用 $(2)$ 替换内积项：
+  \begin{equation}
+    \norm{\theta_{t+1} - \theta^\star}^2
+    \le \norm{\theta_t - \theta^\star}^2
+      - \frac{2}{L}[f(\theta_t) - f(\theta^\star)]
+      + \frac{1}{L^2} \norm{\grad f(\theta_t)}^2.
+  \end{equation}
+  从 $(1)$ 解出 $\frac{1}{L^2}\norm{\grad f(\theta_t)}^2 \le \frac{2}{L}[f(\theta_t) - f(\theta_{t+1})]$，代入：
+  \begin{equation}
+    \norm{\theta_{t+1} - \theta^\star}^2
+    \le \norm{\theta_t - \theta^\star}^2 - \frac{2}{L}[f(\theta_t) - f(\theta^\star)]
+      + \frac{2}{L}[f(\theta_t) - f(\theta_{t+1})].
+  \end{equation}
+  即：
+  \begin{equation}
+    \frac{2}{L}[f(\theta_t) - f(\theta^\star)]
+    \le \norm{\theta_t - \theta^\star}^2 - \norm{\theta_{t+1} - \theta^\star}^2
+      + \frac{2}{L}[f(\theta_t) - f(\theta_{t+1})].
+  \end{equation}
+
+  对 $t = 0, 1, \ldots, T-1$ 累加。右边第一项为 telescoping sum（望远镜和）：
+  \begin{equation}
+    \frac{2}{L} \sum_{t=0}^{T-1} [f(\theta_t) - f(\theta^\star)]
+    \le \norm{\theta_0 - \theta^\star}^2 - \norm{\theta_T - \theta^\star}^2
+      + \frac{2}{L}[f(\theta_0) - f(\theta_T)].
+  \end{equation}
+  由于 $\norm{\theta_T - \theta^\star}^2 \ge 0$ 且 $f(\theta_T) \ge f(\theta^\star)$，可得：
+  \begin{equation}
+    \frac{2}{L} \sum_{t=0}^{T-1} [f(\theta_t) - f(\theta^\star)]
+    \le \norm{\theta_0 - \theta^\star}^2 + \frac{2}{L}[f(\theta_0) - f(\theta^\star)].
+  \end{equation}
+
+  由下降引理，$f(\theta_t)$ 是非增的，所以 $\sum_{t=0}^{T-1}[f(\theta_t) - f(\theta^\star)] \ge T[f(\theta_T) - f(\theta^\star)]$。更简洁的版本是使用加权平均
+  $\bar\theta_T = \frac1T \sum_{t=0}^{T-1}\theta_t$：由 Jensen 不等式，$f(\bar\theta_T) \le \frac1T\sum_t f(\theta_t)$，从而：
+  \begin{equation}
+    f(\bar\theta_T) - f(\theta^\star) \le \frac{L}{2T} \norm{\theta_0 - \theta^\star}^2.
+  \end{equation}
+  由 $f(\theta_T) \le f(\bar\theta_T)$（$f(\theta_t)$ 单调下降，但更准确地说，输出最后迭代 $\theta_T$ 的 bound 可以用类似技巧得到同样的 $\mathcal{O}(1/T)$ 渐近速率）。
+\end{proof*}
+
+\subsection{强凸情形下的线性收敛}
+
+\begin{theorem}[GD 在强凸且光滑条件下的线性收敛]\label{thm:gd-strconv}
+  设 $f$ 为 $\mu$-强凸且 $L$-光滑。取固定步长 $\eta = 2/(\mu + L)$，则：
+  \begin{equation}\label{eq:gd-linear}
+    \norm{\theta_T - \theta^\star}^2 \le \left(\frac{\kappa - 1}{\kappa + 1}\right)^{2T} \norm{\theta_0 - \theta^\star}^2.
+  \end{equation}
+  其中 $\kappa = L/\mu$。当 $\eta = 1/L$ 时（更保守的步长）：
+  \begin{equation}\label{eq:gd-linear-simple}
+    f(\theta_T) - f(\theta^\star) \le \left(1 - \frac{\mu}{L}\right)^T \left[f(\theta_0) - f(\theta^\star)\right].
+  \end{equation}
+\end{theorem}
+
+\begin{proof*}[$\eta = 1/L$ 情形的证明]
+  展开距离平方：
+  \begin{equation}
+    \begin{aligned}
+      \norm{\theta_{t+1} - \theta^\star}^2
+      &= \norm{\theta_t - \eta \grad f(\theta_t) - \theta^\star}^2 \\
+      &= \norm{\theta_t - \theta^\star}^2
+        - 2\eta \ip{\grad f(\theta_t)}{\theta_t - \theta^\star}
+        + \eta^2 \norm{\grad f(\theta_t)}^2.
+    \end{aligned}
+  \end{equation}
+  使用强凸性和光滑性的 co-coercivity 不等式（这是光滑强凸函数的\textbf{核心不等式}）：
+  \begin{equation}\label{eq:cocoercivity}
+    \ip{\grad f(\theta) - \grad f(\theta^\star)}{\theta - \theta^\star}
+    \ge \frac{\mu L}{\mu + L} \norm{\theta - \theta^\star}^2
+      + \frac{1}{\mu + L} \norm{\grad f(\theta) - \grad f(\theta^\star)}^2.
+  \end{equation}
+  由于 $\grad f(\theta^\star) = 0$（最优性条件），上式化为：
+  \begin{equation}
+    \ip{\grad f(\theta_t)}{\theta_t - \theta^\star}
+    \ge \frac{\mu L}{\mu + L} \norm{\theta_t - \theta^\star}^2
+      + \frac{1}{\mu + L} \norm{\grad f(\theta_t)}^2.
+  \end{equation}
+
+  取 $\eta = 1/L$，代入距离平方展开式：
+  \begin{equation}
+    \begin{aligned}
+      \norm{\theta_{t+1} - \theta^\star}^2
+      &\le \norm{\theta_t - \theta^\star}^2
+        - \frac{2}{L} \left[\frac{\mu L}{\mu + L} \norm{\theta_t - \theta^\star}^2
+          + \frac{1}{\mu + L} \norm{\grad f(\theta_t)}^2\right]
+        + \frac{1}{L^2} \norm{\grad f(\theta_t)}^2 \\[4pt]
+      &= \left(1 - \frac{2\mu}{\mu + L}\right) \norm{\theta_t - \theta^\star}^2
+        + \underbrace{\left(\frac{1}{L^2} - \frac{2}{L(\mu + L)}\right)}_{< 0} \norm{\grad f(\theta_t)}^2 \\[4pt]
+      &\le \left(1 - \frac{2\mu}{\mu + L}\right) \norm{\theta_t - \theta^\star}^2.
+    \end{aligned}
+  \end{equation}
+  注意 $1 - \frac{2\mu}{\mu + L} = \frac{L - \mu}{L + \mu} = \frac{\kappa - 1}{\kappa + 1} < 1$。
+  递推 $T$ 步即得 \eqref{eq:gd-linear}。
+
+  对函数值的 bound \eqref{eq:gd-linear-simple}，由光滑性和强凸性可证
+  $f(\theta_T) - f(\theta^\star) \le \frac{L}{2}\norm{\theta_T - \theta^\star}^2$
+  和 $\norm{\theta_0 - \theta^\star}^2 \le \frac{2}{\mu}[f(\theta_0) - f(\theta^\star)]$，联合即可得到。
+\end{proof*}
+
+\subsection{小结：GD 的收敛速度}
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+函数类 & 步长 & 收敛速度 \\
+\midrule
+$L$-光滑 + 凸 & $\eta = 1/L$ & $\mathcal{O}(1/T)$（次线性）\\
+$\mu$-强凸 + $L$-光滑 & $\eta = 1/L$ & $\mathcal{O}((1 - 1/\kappa)^T)$（线性）\\
+$\mu$-强凸 + $L$-光滑 & $\eta = \frac{2}{\mu+L}$ & $\mathcal{O}\!\left(\left(\frac{\kappa-1}{\kappa+1}\right)^{2T}\right)$（最优线性）\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{达到 $\eps$ 精度所需的迭代次数}：
+\begin{itemize}
+  \item 凸情形：$T = \mathcal{O}(1/\eps)$
+  \item 强凸情形：$T = \mathcal{O}(\kappa \log(1/\eps))$ —— 条件数 $\kappa$ 直接乘在迭代数上！
+\end{itemize}
+
+这就是为什么病态问题（大 $\kappa$）是优化中的核心瓶颈，也是为什么我们要发明预条件方法和自适应方法——它们试图通过改变几何来减小有效条件数。
+
+% ======================================================================
+\section{随机梯度下降 (SGD)}
+% ======================================================================
+
+\subsection{从 GD 到 SGD：噪声的引入}
+
+在机器学习中，目标函数通常是一个有限和（或期望）：
+\begin{equation}\label{eq:erm}
+  f(\theta) = \frac{1}{n} \sum_{i=1}^{n} \ell(\theta; z_i) \quad \text{或} \quad f(\theta) = \E_{z \sim \mathcal{D}}[\ell(\theta; z)].
+\end{equation}
+
+计算 $\grad f(\theta)$ 需要遍历整个数据集（梯度下降），在大数据集上开销巨大。
+随机梯度下降（SGD）在每步采样子集 $\mathcal{B}_t$，构造随机梯度：
+\begin{equation}\label{eq:sg}
+  g_t = \frac{1}{|\mathcal{B}_t|} \sum_{i \in \mathcal{B}_t} \grad_\theta \ell(\theta_t; z_i).
+\end{equation}
+
+\subsection{SGD 的统计假设}
+
+我们对随机梯度做以下标准假设：
+
+\begin{definition}[SGD 的标准假设]
+  \begin{enumerate}[label=(A\arabic*)]
+    \item \textbf{无偏性}：$\E[g_t \mid \theta_t] = \grad f(\theta_t)$。
+    \item \textbf{有界方差}：存在 $\sigma > 0$，使得 $\E[\norm{g_t - \grad f(\theta_t)}^2 \mid \theta_t] \le \sigma^2$。
+    \item \textbf{(可选) 有界二阶矩}：$\E[\norm{g_t}^2 \mid \theta_t] \le G^2$。（注意：这蕴含 $\norm{\grad f(\theta_t)}^2 \le G^2$）
+  \end{enumerate}
+\end{definition}
+
+我们定义随机梯度噪声 $\xi_t = g_t - \grad f(\theta_t)$。则 $\E[\xi_t \mid \theta_t] = 0$，$\E[\norm{\xi_t}^2 \mid \theta_t] \le \sigma^2$。
+噪声的方差 $\sigma^2$ 在 SGD 的分析中扮演核心角色——它是 SGD 收敛率比 GD 慢一个 $\sqrt{T}$ 因子的根本原因。
+
+\subsection{SGD 在凸情形下的收敛分析}
+
+\begin{theorem}[SGD 在凸光滑条件下的收敛率]\label{thm:sgd-convex}
+  设 $f$ 为 $L$-光滑且 convex 函数。取 SGD 步长 $\eta_t = \eta = \frac{\norm{\theta_0 - \theta^\star}}{\sigma\sqrt{T}}$（常数步长），
+  或 $\eta_t = \frac{1}{L + t}$（递减步长）。令 $\bar\theta_T = \frac{1}{T}\sum_{t=1}^T \theta_t$（Polyak 平均），则：
+  \begin{equation}\label{eq:sgd-convex-rate}
+    \E[f(\bar\theta_T)] - f(\theta^\star) \le \frac{\norm{\theta_0 - \theta^\star}^2}{2\eta T} + \frac{\eta \sigma^2}{2}.
+  \end{equation}
+  当取 $\eta = \frac{D}{\sigma\sqrt{T}}$（其中 $D = \norm{\theta_0 - \theta^\star}$）时：
+  \begin{equation}
+    \E[f(\bar\theta_T)] - f(\theta^\star) \le \frac{D\sigma}{\sqrt{T}} = \mathcal{O}(1/\sqrt{T}).
+  \end{equation}
+\end{theorem}
+
+\begin{proof*}
+  与 GD 证明相似，展开距离平方：
+  \begin{equation}
+    \begin{aligned}
+      \norm{\theta_{t+1} - \theta^\star}^2
+      &= \norm{\theta_t - \eta g_t - \theta^\star}^2 \\
+      &= \norm{\theta_t - \theta^\star}^2
+        - 2\eta \ip{g_t}{\theta_t - \theta^\star}
+        + \eta^2 \norm{g_t}^2.
+    \end{aligned}
+  \end{equation}
+  取条件期望 $\E[\cdot \mid \theta_t]$：
+  \begin{equation}
+    \begin{aligned}
+      \E[\norm{\theta_{t+1} - \theta^\star}^2 \mid \theta_t]
+      &= \norm{\theta_t - \theta^\star}^2
+        - 2\eta \ip{\grad f(\theta_t)}{\theta_t - \theta^\star}
+        + \eta^2 \E[\norm{g_t}^2 \mid \theta_t] \\[4pt]
+      &\le \norm{\theta_t - \theta^\star}^2
+        - 2\eta \ip{\grad f(\theta_t)}{\theta_t - \theta^\star}
+        + \eta^2 \norm{\grad f(\theta_t)}^2 + \eta^2 \sigma^2,
+    \end{aligned}
+  \end{equation}
+  其中最后一步使用了 $\E[\norm{g_t}^2] = \norm{\grad f(\theta_t)}^2 + \E[\norm{\xi_t}^2] \le \norm{\grad f(\theta_t)}^2 + \sigma^2$。
+
+  由凸性：$f(\theta_t) - f(\theta^\star) \le \ip{\grad f(\theta_t)}{\theta_t - \theta^\star}$，代入：
+  \begin{equation}
+    \E[\norm{\theta_{t+1} - \theta^\star}^2 \mid \theta_t]
+    \le \norm{\theta_t - \theta^\star}^2
+      - 2\eta [f(\theta_t) - f(\theta^\star)]
+      + \eta^2 \norm{\grad f(\theta_t)}^2 + \eta^2 \sigma^2.
+  \end{equation}
+
+  由下降引理：$\norm{\grad f(\theta_t)}^2 \le 2L[f(\theta_t) - f(\theta_{t+1})] + L^2\eta^2 \norm{g_t}^2$（需要仔细处理）。
+  一个更简洁的途径是利用 $\eta \le 1/L$ 的条件（或使用递减步长来回避这个约束）。
+
+  取全期望，移项，对 $t = 1, \ldots, T$ 累加，获得：
+  \begin{equation}
+    2\eta \sum_{t=1}^T \E[f(\theta_t) - f(\theta^\star)]
+    \le \norm{\theta_0 - \theta^\star}^2 + \eta^2 \sigma^2 T + \eta^2 \sum_{t=1}^T \E[\norm{\grad f(\theta_t)}^2].
+  \end{equation}
+  若取 $\eta \le 1/L$，则 $\eta^2 \norm{\grad f(\theta_t)}^2 \le \eta [f(\theta_t) - f(\theta_{t+1})]$ 可被吸收。
+  最终得到 \eqref{eq:sgd-convex-rate}。$\square$
+\end{proof*}
+
+\textbf{GD vs SGD 的收敛率对比}：
+\begin{itemize}
+  \item GD：$f(\theta_T) - f^\star = \mathcal{O}(1/T)$，每步需计算全体梯度（$n$ 个样本）。
+  \item SGD：$f(\bar\theta_T) - f^\star = \mathcal{O}(1/\sqrt{T})$，每步只需计算 $|\mathcal{B}|$ 个样本的梯度。
+  \item 在总计算量（样本访问数）度量下：SGD 有时比 GD 更优（尤其是 $n$ 很大时）。
+\end{itemize}
+
+\begin{center}
+\begin{tikzpicture}[scale=0.8]
+  \draw[->] (0,0) -- (8,0) node[right] {迭代次数 $T$};
+  \draw[->] (0,0) -- (0,5) node[above] {$f(\theta_T) - f(\theta^\star)$};
+  \draw[domain=0.5:7.5, smooth, thick, blue] plot (\x, {4/\x}) node[right] {GD: $\mathcal{O}(1/T)$};
+  \draw[domain=0.5:7.5, smooth, thick, red] plot (\x, {4/sqrt(\x)}) node[right] {SGD: $\mathcal{O}(1/\sqrt{T})$};
+  \node at (4, 4.5) {注意：SGD 的界有更好的常数? 不一定——$\sigma$ 可能很大};
+\end{tikzpicture}
+\end{center}
+
+\subsection{强凸情形下的 SGD}
+
+\begin{theorem}[SGD 在强凸光滑条件下的收敛率（简略版）]\label{thm:sgd-strconv}
+  设 $f$ 为 $\mu$-强凸且 $L$-光滑。取 SGD 步长 $\eta_t = \frac{2}{\mu(t+1)}$（递减步长），则：
+  \begin{equation}
+    \E[f(\theta_T)] - f(\theta^\star) \le \frac{2L\sigma^2}{\mu^2 T} = \mathcal{O}(1/T).
+  \end{equation}
+  注意：强凸 + 递减步长下，SGD 的渐近速率恢复为 $\mathcal{O}(1/T)$（而非凸情形下的 $1/\sqrt{T}$），
+  但仍达不到 GD 在强凸下的线性速率 $\mathcal{O}(e^{-T/\kappa})$。
+\end{theorem}
+
+\textbf{直观解释}：强凸性提供了一个朝向最优点的「拉力」，抵消了噪声带来的扩散效应。
+
+% ======================================================================
+\section{Momentum 与 Nesterov 加速梯度}
+% ======================================================================
+
+\subsection{Polyak 重球法 (Heavy Ball / Momentum)}
+
+Momentum 方法在更新中引入「惯性」：
+\begin{equation}\label{eq:momentum}
+  \begin{aligned}
+    d_t &= \beta d_{t-1} + \grad f(\theta_t), \\
+    \theta_{t+1} &= \theta_t - \eta d_t,
+  \end{aligned}
+\end{equation}
+其中 $\beta \in [0,1)$ 是动量系数（典型值 $\beta = 0.9$）。
+
+将其展开以看清结构：
+\begin{equation}
+  d_t = \grad f(\theta_t) + \beta \grad f(\theta_{t-1}) + \beta^2 \grad f(\theta_{t-2}) + \cdots
+\end{equation}
+即 $d_t$ 是历史梯度的指数加权和（EMA）。
+
+\textbf{为什么 momentum 有帮助？} 考虑二次函数 $f(\theta) = \frac12\theta^\top A\theta$。
+Momentum 的迭代在特征基下解耦为 $d$ 个独立的一维过程，每个由以下二阶递推描述：
+\begin{equation}
+  \theta_{t+1} = \theta_t - \eta \sum_{k=0}^{t}\beta^{t-k} \lambda \theta_k.
+\end{equation}
+通过分析这个递推的特征值，可证明 momentum 在 condition number $\kappa$ 下的收敛率为
+$\mathcal{O}\left(\big(\frac{\sqrt{\kappa}-1}{\sqrt{\kappa}+1}\big)^T\right)$，相比 GD 的
+$\mathcal{O}\big(\big(\frac{\kappa-1}{\kappa+1}\big)^T\big)$，将 $\kappa$ 替换为 $\sqrt{\kappa}$——
+这是一个显著的加速。
+
+\subsection{Nesterov 加速梯度 (NAG)}
+
+Nesterov 的变体使用「前瞻」梯度：
+\begin{equation}\label{eq:nesterov}
+  \begin{aligned}
+    d_t &= \beta d_{t-1} + \grad f(\theta_t - \eta \beta d_{t-1}), \\
+    \theta_{t+1} &= \theta_t - \eta d_t.
+  \end{aligned}
+\end{equation}
+
+与标准 Momentum 的唯一区别是：梯度在「前瞻点」$\theta_t - \eta \beta d_{t-1}$ 处计算（而非当前点 $\theta_t$）。
+这个看似微小的变化使 Nesterov 方法成为凸光滑函数上的\textbf{最优一阶方法}（oracle 下界匹配）：
+
+\begin{theorem}[Nesterov 1983, 2004]
+  对 $L$-光滑凸函数，NAG 取适当参数后满足：
+  \begin{equation}
+    f(\theta_T) - f^\star \le \frac{2L\norm{\theta_0 - \theta^\star}^2}{T^2} = \mathcal{O}(1/T^2).
+  \end{equation}
+  对 $\mu$-强凸 $L$-光滑函数：
+  \begin{equation}
+    f(\theta_T) - f^\star = \mathcal{O}\!\left(\left(1 - \frac{1}{\sqrt{\kappa}}\right)^T\right).
+  \end{equation}
+  这些速率与一阶 oracle 下界匹配——因此 Nesterov 方法是\textbf{最优}的。
+\end{theorem}
+
+\begin{center}
+\begin{tabular}{lcc}
+\toprule
+方法 & 凸情形 & 强凸情形 \\
+\midrule
+GD & $\mathcal{O}(1/T)$ & $\mathcal{O}((1 - 1/\kappa)^T)$ \\
+Momentum & $\mathcal{O}(1/T)$ & $\mathcal{O}((1 - 1/\sqrt{\kappa})^T)$ \\
+Nesterov & $\mathcal{O}(1/T^2)$ & $\mathcal{O}((1 - 1/\sqrt{\kappa})^T)$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{关键教训}：Momentum/Nesterov 通过利用历史梯度信息构建了更好的「方向估计」$d_t$。
+这些方法的加速效果来源于梯度序列中\textbf{低频分量}的放大——对应于优化过程中持续的下降方向（特征空间的慢方向）。
+
+% ======================================================================
+\section{学习率调度}
+% ======================================================================
+
+\subsection{为什么需要调度？}
+
+单纯 SGD 在大规模深度学习中需要精心调整学习率。原因：
+\begin{enumerate}[label=(\arabic*)]
+  \item 初始阶段：太大的 $\eta$ 导致发散（超越光滑性约束 $\eta < 2/L$）；太小的 $\eta$ 导致进展缓慢。
+  \item 收敛阶段：固定 $\eta$ 使 SGD 在最优解附近以方差 $\eta\sigma^2$ 震荡，无法精确收敛。
+  \item 因此需要 $\eta_t \to 0$。
+\end{enumerate}
+
+\subsection{常用调度策略}
+
+\begin{enumerate}[label=(\arabic*)]
+  \item \textbf{Warmup}（线性增长）：
+  \begin{equation}
+    \eta_t = \eta_{\max} \cdot \frac{t}{T_{\text{warmup}}},\qquad t \le T_{\text{warmup}}.
+  \end{equation}
+  动机：训练初期，模型参数是随机的，梯度噪声很大。逐步增大步长防止「爆炸」。
+  \item \textbf{Cosine Decay}：
+  \begin{equation}
+    \eta_t = \eta_{\min} + \frac{\eta_{\max} - \eta_{\min}}{2} \left(1 + \cos\left(\frac{\pi t}{T}\right)\right).
+  \end{equation}
+  \item \textbf{Step Decay}：每 $k$ epoch 将 $\eta$ 乘上衰减因子 $\gamma \in (0,1)$。
+  \item \textbf{多项式衰减}：$\eta_t = \eta_0(1 - t/T)^p$。
+\end{enumerate}
+
+% ======================================================================
+\section{理论练习}
+% ======================================================================
+
+\subsection*{练习 1：下降引理的逐行推导}
+
+用积分形式的 Taylor 公式验证下降引理。即证明：若 $\norm{\grad f(x) - \grad f(y)} \le L\norm{x-y}$，则
+\begin{equation}
+  f(y) \le f(x) + \ip{\grad f(x)}{y-x} + \frac{L}{2} \norm{y-x}^2.
+\end{equation}
+
+\textbf{提示}：
+\begin{equation}
+  f(y) - f(x) = \int_0^1 \ip{\grad f(x + t(y-x))}{y-x}\,dt
+  = \ip{\grad f(x)}{y-x} + \int_0^1 \ip{\grad f(x + t(y-x)) - \grad f(x)}{y-x}\,dt.
+\end{equation}
+然后用 Cauchy-Schwarz 和光滑性假设界住积分中的每一项。
+
+\subsection*{练习 2：GD 在二次函数上的精确收敛因子}
+
+考虑 $f(\theta) = \frac12\theta^\top A\theta$，$A = \diag(\lambda_1, \ldots, \lambda_d)$（$\lambda_i > 0$）。
+写出 GD 在第 $i$ 个坐标上的递推，并证明 $|\theta_{T,i}| = |1 - \eta \lambda_i|^T |\theta_{0,i}|$。
+给出最优步长 $\eta$ 使 $\max_i |1 - \eta \lambda_i|$（即谱半径）最小化，并证明该步长下
+收敛因子为 $(\kappa - 1)/(\kappa + 1)$，其中 $\kappa = \max_i \lambda_i / \min_i \lambda_i$。
+
+\subsection*{练习 3：条件数与梯度的几何}
+
+对 $f(\theta) = \frac12\theta^\top Q\diag(1,\kappa)Q^\top\theta$（$Q$ 为正交旋转矩阵），
+分别在 $Q=I$（坐标对齐）和 $Q$ 为任意旋转两种情况下，画出 GD 的前 10 步轨迹。
+解释：为什么旋转不影响 GD 的收敛（GD 是旋转不变的），但会影响对角预条件方法（如 Adam）的表现？
+
+\textbf{提示}：GD 的更新 $\theta_{t+1} = \theta_t - \eta A\theta_t$ 在坐标变换 $y = Q^\top\theta$ 下变为
+$y_{t+1} = y_t - \eta \diag(1,\kappa) y_t$。GD 的 dynamic 在旋转下等价，因为预条件器是 $I$（它是坐标不变的）。
+
+\subsection*{练习 4：SGD 方差的实验测量}
+
+在二维二次函数 $f(\theta) = \frac12\theta^\top A\theta$ 上，向梯度添加独立高斯噪声 $\mathcal{N}(0,\sigma^2 I)$
+来模拟随机梯度。固定步长 $\eta$，运行 SGD 1000 步后记录最终误差 $f(\theta_T) - f^\star$。
+绘制「最终误差 vs $\eta$」的曲线，注明最优步长的位置，并验证：最终误差的下界为 $\eta\sigma^2/2$（不随 $T$ 消失的部分）。
+
+\subsection*{练习 5：Gradient Descent + Momentum 的特征分析}
+
+考虑一维二次函数 $f(\theta) = \frac{\lambda}{2}\theta^2$（$\lambda > 0$）。
+将 GD + Momentum 写为状态空间方程：
+\begin{equation}
+  \begin{pmatrix} \theta_{t+1} \\ d_{t+1} \end{pmatrix}
+  = \begin{pmatrix} 1 & -\eta \\ \beta\lambda & \beta - \eta\lambda \end{pmatrix}
+  \begin{pmatrix} \theta_t \\ d_t \end{pmatrix}.
+\end{equation}
+计算该系统矩阵的特征值，找出使谱半径最小的 $\eta$ 和 $\beta$。证明最佳收敛因子与 GD 的对比是
+$\frac{\sqrt{\kappa} - 1}{\sqrt{\kappa} + 1}$ vs $\frac{\kappa - 1}{\kappa + 1}$（对多维推广的结果）。
+
+% ======================================================================
+\section{工程练习}
+% ======================================================================
+
+\subsection*{工程任务 1：实现并可视化 GD}
+
+用 NumPy 或 PyTorch 实现以下实验：
+\begin{enumerate}[label=(\arabic*)]
+  \item 定义二次函数 $f(\theta) = \frac12\theta^\top A\theta$，其中 $A = \diag(1, 100)$（$\kappa = 100$）。
+  \item 以不同步长 $\eta \in \{0.01, 0.1, 0.5, 1.0, 1.5, 1.9, 2.1\} \times (1/\lambda_{\max})$ 运行 GD。
+  \item 绘制不同 $\eta$ 下 $f(\theta_t)$ vs 迭代次数的 semilogy 图。
+  \item 验证：$\eta \ge 2/L$ 时发散；$\eta = 1/L$ 时稳定下降。
+  \item 在等高线图上绘出 GD 的前 20 步轨迹。
+\end{enumerate}
+
+\subsection*{工程任务 2：SGD 的噪声与方差}
+
+\begin{enumerate}[label=(\arabic*)]
+  \item 在任务 1 的二次函数上实现 SGD（梯度添加高斯噪声 $\mathcal{N}(0, \sigma^2 I)$）。
+  \item 固定 $\eta = 1/L$，变化 $\sigma^2 \in \{0.1, 1, 10\}$，绘制 $f(\theta_t)$ 的轨迹（多次运行，绘均值和标准差带）。
+  \item 画 $\log(f(\theta_T) - f^\star)$ vs $\log T$ 的图，验证 SGD 的斜率约为 $-1/2$（即 $\mathcal{O}(1/\sqrt{T})$），
+  与 GD 的斜率 $-1$（即 $\mathcal{O}(1/T)$）形成对比。
+\end{enumerate}
+
+\subsection*{工程任务 3：Momentum 与 Nesterov 的加速效果}
+
+\begin{enumerate}[label=(\arabic*)]
+  \item 在 $\kappa = 1000$ 的二维二次函数上比较 GD、Momentum（$\beta = 0.9$）、Nesterov 的收敛。
+  \item 在同一图上绘出三者的 $\log(f(\theta_t) - f^\star)$ vs 迭代数曲线。
+  \item 验证 Momentum/Nesterov 收敛所需的迭代数约为 GD 的 $1/\sqrt{\kappa}$ 因子。
+  \item 在轨迹等高线图中观察 Momentum 的「过冲」现象（越过最优点后再折返）与 GD 的「之字形」轨迹。
+\end{enumerate}
+
+\subsection*{工程任务 4：学习率调度对比}
+
+在非强凸函数（如 logistic regression loss）上比较：
+\begin{itemize}
+  \item 固定步长 SGD
+  \item SGD + warmup + cosine decay
+  \item SGD + step decay
+\end{itemize}
+绘制 loss 曲线（semi-log），观察调度对收敛速度和最终精度的改善。
+
+% ======================================================================
+\section{阅读清单 (Week 1)}
+% ======================================================================
+
+\begin{itemize}
+  \item \textbf{Bubeck (2015)} — \textit{Convex Optimization: Algorithms and Complexity}, \S 3.1--3.3.
+    光滑性的三种等价刻画、梯度下降的收敛分析。
+  \item \textbf{Nesterov (2018)} — \textit{Lectures on Convex Optimization}, \S 1.2, \S 2.1.
+    凸分析基础、梯度方法的 oracle 下界。
+  \item \textbf{Boyd \& Vandenberghe (2004)} — \textit{Convex Optimization}, \S 9.2--9.3.
+    梯度下降、最陡下降、条件数的几何解释。
+  \item \textbf{Garrigos \& Gower (2023)} — \textit{Handbook of Convergence Theorems for Gradient Descent}.
+    一份优秀的 GD/SGD 收敛定理速查手册。
+\end{itemize}
+
+\end{document}
