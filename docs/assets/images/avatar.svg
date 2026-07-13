@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="352" height="352" viewBox="0 0 352 352" role="img" aria-labelledby="title desc">
+  <title id="title">Wu Yufan monogram</title>
+  <desc id="desc">A geometric WY monogram used as the profile image fallback.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#17464a"/>
+      <stop offset="1" stop-color="#3f7d7b"/>
+    </linearGradient>
+  </defs>
+  <rect width="352" height="352" rx="176" fill="url(#bg)"/>
+  <circle cx="176" cy="176" r="139" fill="none" stroke="#d9eeeb" stroke-opacity=".34" stroke-width="2"/>
+  <path d="M83 112h29l26 118 31-92h23l31 92 25-118h29l-38 145h-26l-33-92-32 92h-27L83 112Z" fill="#f7f6f2"/>
+</svg>

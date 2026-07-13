@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Wu Yufan 的学术主页：数学优化、矩阵分析、数值线性代数与深度学习优化器学习笔记。">
+  <meta name="theme-color" content="#f7f6f2">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Wu Yufan · Academic CV">
+  <meta property="og:description" content="Mathematical optimization, numerical linear algebra, and learning notes.">
+  <title>Wu Yufan · Academic CV</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/css/site.css">
+  <script>
+    (function () {
+      let stored = null;
+      try {
+        stored = localStorage.getItem('wy-theme');
+      } catch (error) {
+        stored = null;
+      }
+      const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      document.documentElement.dataset.theme = stored || preferred;
+    }());
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#cv">跳到正文</a>
+
+  <header class="masthead">
+    <div class="masthead__inner">
+      <a class="brand" href="#top" aria-label="返回首页">
+        <span class="brand__name">Wu Yufan</span>
+        <span class="brand__cn">Academic CV</span>
+      </a>
+
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">
+        <span class="sr-only">打开导航</span>
+        <span></span><span></span><span></span>
+      </button>
+
+      <nav class="site-nav" id="site-nav" aria-label="主导航">
+        <a href="#education">Education</a>
+        <a href="#interests">Interests</a>
+        <a href="#projects">Projects</a>
+        <a href="#notes">Notes</a>
+        <a href="https://github.com/sufe-WuYuFan" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
+        <button class="theme-toggle" type="button" aria-label="切换到深色主题" aria-pressed="false" title="切换明暗主题">
+          <svg class="icon icon--sun" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"></path>
+          </svg>
+          <svg class="icon icon--moon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8Z"></path>
+          </svg>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <div class="page" id="top">
+    <aside class="profile" aria-label="个人信息">
+      <div class="profile__sticky">
+        <div class="profile__avatar-wrap">
+          <img
+            class="profile__avatar"
+            src="https://avatars.githubusercontent.com/u/300102223?v=4"
+            data-fallback="assets/images/avatar.svg"
+            alt="Wu Yufan 的 GitHub 头像"
+            width="176"
+            height="176"
+          >
+        </div>
+        <div class="profile__identity">
+          <h1>Wu Yufan</h1>
+          <p class="profile__role">Student · Optimization learner</p>
+          <p class="profile__bio">Interested in the mathematics behind modern optimizers, matrix methods, and reliable numerical computation.</p>
+        </div>
+
+        <dl class="profile__facts">
+          <div>
+            <dt aria-label="学校">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-6 9 6-9 6-9-6Z"></path><path d="M7 13v4.5c2.8 2 7.2 2 10 0V13"></path></svg>
+            </dt>
+            <dd>Shanghai University of Finance and Economics</dd>
+          </div>
+          <div>
+            <dt aria-label="邮箱">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"></rect><path d="m4 7 8 6 8-6"></path></svg>
+            </dt>
+            <dd><a href="mailto:2024111064@stu.sufe.edu.cn">2024111064@stu.sufe.edu.cn</a></dd>
+          </div>
+          <div>
+            <dt aria-label="GitHub">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3.3-.4 6.8-1.6 6.8-7A5.4 5.4 0 0 0 19.4 4 5 5 0 0 0 19.3.5S18.2.1 15 2a13.4 13.4 0 0 0-6 0C5.8.1 4.7.5 4.7.5A5 5 0 0 0 4.6 4a5.4 5.4 0 0 0-1.4 3.7c0 5.4 3.5 6.6 6.8 7A4.8 4.8 0 0 0 9 18v4"></path><path d="M9 19c-3 .9-3-1.5-4-2"></path></svg>
+            </dt>
+            <dd><a href="https://github.com/sufe-WuYuFan" target="_blank" rel="noreferrer">sufe-WuYuFan</a></dd>
+          </div>
+        </dl>
+
+        <div class="profile__actions">
+          <a class="button button--primary" href="#notes">View notes</a>
+          <a class="button button--ghost" href="https://github.com/sufe-WuYuFan/Optimizer-algorithm-learning" target="_blank" rel="noreferrer">Repository <span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+    </aside>
+
+    <main class="cv" id="cv">
+      <header class="cv-hero">
+        <p class="eyebrow">Academic profile · 学术主页</p>
+        <h2>Curriculum Vitae</h2>
+        <p class="cv-hero__lead">I am building a rigorous foundation in mathematical optimization and numerical linear algebra, with a particular focus on understanding why modern deep-learning optimizers work.</p>
+        <p class="cv-hero__lead cv-hero__lead--cn">我正在系统学习数学优化、矩阵分析与数值线性代数，并持续整理带完整证明的中文学习资料。</p>
+        <div class="cv-hero__meta">
+          <span>Open learning notes</span>
+          <span>Updated July 2026</span>
+          <a href="mailto:2024111064@stu.sufe.edu.cn">Contact</a>
+        </div>
+      </header>
+
+      <section class="cv-section" id="education" aria-labelledby="education-title">
+        <div class="cv-section__heading">
+          <p class="section-index">01</p>
+          <h2 id="education-title">Education</h2>
+        </div>
+        <div class="cv-section__body">
+          <article class="entry">
+            <div class="entry__time">Current</div>
+            <div class="entry__content">
+              <div class="entry__title-row">
+                <h3>Shanghai University of Finance and Economics</h3>
+                <span class="entry__place">Shanghai</span>
+              </div>
+              <p class="entry__subtitle">Student · Independent study in optimization and matrix methods</p>
+              <ul>
+                <li>Developing a proof-oriented understanding of convex optimization, stochastic methods, and matrix preconditioning.</li>
+                <li>Maintaining open Chinese lecture notes and reproducible learning materials on GitHub.</li>
+              </ul>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="cv-section" id="interests" aria-labelledby="interests-title">
+        <div class="cv-section__heading">
+          <p class="section-index">02</p>
+          <h2 id="interests-title">Research Interests</h2>
+        </div>
+        <div class="cv-section__body">
+          <p class="section-intro">My current interests connect optimization algorithms with the linear-algebraic structures that govern curvature, conditioning, and iteration dynamics.</p>
+          <div class="interest-grid">
+            <article>
+              <span class="interest-grid__number">A</span>
+              <h3>Mathematical Optimization</h3>
+              <p>Gradient methods, mirror descent, adaptive algorithms, convergence analysis, and the geometry of preconditioning.</p>
+            </article>
+            <article>
+              <span class="interest-grid__number">B</span>
+              <h3>Matrix Optimization</h3>
+              <p>Adam, Shampoo, SOAP, Muon, PolarGrad, matrix functions, polar decomposition, and Kronecker structure.</p>
+            </article>
+            <article>
+              <span class="interest-grid__number">C</span>
+              <h3>Numerical Linear Algebra</h3>
+              <p>QR, SVD, Cholesky, positive definiteness, spectral analysis, conditioning, and stable computation.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="cv-section" id="projects" aria-labelledby="projects-title">
+        <div class="cv-section__heading">
+          <p class="section-index">03</p>
+          <h2 id="projects-title">Selected Projects</h2>
+        </div>
+        <div class="cv-section__body">
+          <article class="entry entry--project">
+            <div class="entry__time">2026</div>
+            <div class="entry__content">
+              <div class="entry__title-row">
+                <h3>Optimizer Algorithm Learning</h3>
+                <a class="text-link" href="https://github.com/sufe-WuYuFan/Optimizer-algorithm-learning" target="_blank" rel="noreferrer">Repository ↗</a>
+              </div>
+              <p class="entry__subtitle">A proof-oriented learning repository</p>
+              <ul>
+                <li>Organizes an eight-week path from gradient descent and stochastic optimization to matrix-aware optimizers.</li>
+                <li>Connects modern methods such as AdamW, Shampoo, SOAP, Muon, and PolarGrad to matrix geometry.</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="entry entry--project">
+            <div class="entry__time">2026</div>
+            <div class="entry__content">
+              <div class="entry__title-row">
+                <h3>Linear Algebra Lectures 5–8</h3>
+                <a class="text-link" href="https://github.com/sufe-WuYuFan/Optimizer-algorithm-learning/blob/main/optimizer-lecture/linear_algebra_lectures_5_8_solutions.pdf" target="_blank" rel="noreferrer">Read PDF ↗</a>
+              </div>
+              <p class="entry__subtitle">Detailed solutions, completed proofs, and optimization applications</p>
+              <ul>
+                <li>Covers guided exercises, Jordan form, Perron–Frobenius theory, and Markov-chain averages.</li>
+                <li>Adds equivalent criteria for positive definiteness, Cholesky/LDLᵀ, Schur complements, and optimizer connections.</li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="entry entry--project">
+            <div class="entry__time">2026</div>
+            <div class="entry__content">
+              <div class="entry__title-row">
+                <h3>Weekly Optimization Notes</h3>
+                <a class="text-link" href="#notes">Browse notes ↓</a>
+              </div>
+              <p class="entry__subtitle">From convergence foundations to adaptive geometry</p>
+              <ul>
+                <li>Week 1: smoothness, strong convexity, GD/SGD, momentum, and Nesterov acceleration.</li>
+                <li>Week 2: mirror descent, AdaGrad, and adaptive regularization.</li>
+              </ul>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="cv-section" id="notes" aria-labelledby="notes-title">
+        <div class="cv-section__heading">
+          <p class="section-index">04</p>
+          <h2 id="notes-title">Notes & Materials</h2>
+        </div>
+        <div class="cv-section__body">
+          <p class="section-intro">Open learning artifacts. PDF is best for reading; TeX is provided when available for review and reuse.</p>
+          <div class="notes-list">
+            <article class="note">
+              <div class="note__meta"><time datetime="2026-07">Jul 2026</time><span>Linear algebra</span></div>
+              <h3>Linear Algebra Lectures 5–8: Solutions & Proofs</h3>
+              <p>Basis and orthogonality, eigenvalues, Jordan form, positive definite matrices, Markov chains, and optimization.</p>
+              <div class="note__links">
+                <a href="https://github.com/sufe-WuYuFan/Optimizer-algorithm-learning/blob/main/optimizer-lecture/linear_algebra_lectures_5_8_solutions.pdf" target="_blank" rel="noreferrer">Read PDF</a>
+              </div>
+            </article>
+
+            <article class="note">
+              <div class="note__meta"><time datetime="2026-07">Jul 2026</time><span>Optimization</span></div>
+              <h3>Week 1 Solutions: GD, SGD & Acceleration</h3>
+              <p>A detailed companion on smoothness, strong convexity, stochastic gradients, momentum, and Nesterov methods.</p>
+              <div class="note__links">
+                <a href="https://github.com/sufe-WuYuFan/Optimizer-algorithm-learning/blob/main/optimizer-lecture/week1_solutions.pdf" target="_blank" rel="noreferrer">PDF</a>
+                <a href="https://github.com/sufe-WuYuFan/Optimizer-algorithm-learning/blob/main/optimizer-lecture/week1_solutions.tex" target="_blank" rel="noreferrer">TeX</a>
+              </div>
+            </article>
+
+            <article class="note">
+              <div class="note__meta"><time datetime="2026-07">Jul 2026</time><span>Matrix analysis</span></div>
+              <h3>Positive Definiteness, Cholesky & Sylvester's Criterion</h3>
+              <p>Equivalent conditions for positive definiteness, Cholesky/LDLᵀ factorizations, leading principal minors, and optimization applications.</p>
+              <div class="note__links">
+                <a href="https://github.com/sufe-WuYuFan/Optimizer-algorithm-learning/blob/main/optimizer-lecture/positive-definite-cholesky-sylvester.pdf" target="_blank" rel="noreferrer">PDF</a>
+                <a href="https://github.com/sufe-WuYuFan/Optimizer-algorithm-learning/blob/main/optimizer-lecture/positive-definite-cholesky-sylvester.tex" target="_blank" rel="noreferrer">TeX</a>
+              </div>
+            </article>
+
+            <article class="note">
+              <div class="note__meta"><time datetime="2026-07">Jul 2026</time><span>Adaptive methods</span></div>
+              <h3>Mirror Descent & AdaGrad</h3>
+              <p>Geometry-aware optimization, Bregman divergence, adaptive scaling, and connections to modern optimizers.</p>
+              <div class="note__links">
+                <a href="https://github.com/sufe-WuYuFan/Optimizer-algorithm-learning/blob/main/optimizer-lecture/week2_mirror_descent_adagrad.pdf" target="_blank" rel="noreferrer">PDF</a>
+                <a href="https://github.com/sufe-WuYuFan/Optimizer-algorithm-learning/blob/main/optimizer-lecture/week2_mirror_descent_adagrad.tex" target="_blank" rel="noreferrer">TeX</a>
+              </div>
+            </article>
+
+            <article class="note">
+              <div class="note__meta"><time datetime="2026-07">Jul 2026</time><span>Survey</span></div>
+              <h3>Modern Optimizers: AdamW to PolarGrad</h3>
+              <p>A compact survey of engineering practice, matrix preconditioning, spectral orthogonalization, and polar geometry.</p>
+              <div class="note__links">
+                <a href="https://github.com/sufe-WuYuFan/Optimizer-algorithm-learning/blob/main/optimizer-lecture/optimizer_lecture_v2.pdf" target="_blank" rel="noreferrer">PDF</a>
+                <a href="https://github.com/sufe-WuYuFan/Optimizer-algorithm-learning/blob/main/optimizer-lecture/optimizer_lecture_v2.tex" target="_blank" rel="noreferrer">TeX</a>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="cv-section" id="skills" aria-labelledby="skills-title">
+        <div class="cv-section__heading">
+          <p class="section-index">05</p>
+          <h2 id="skills-title">Skills & Topics</h2>
+        </div>
+        <div class="cv-section__body">
+          <dl class="skills-list">
+            <div>
+              <dt>Mathematics</dt>
+              <dd>Convex optimization · Matrix analysis · Numerical linear algebra · Probability foundations</dd>
+            </div>
+            <div>
+              <dt>Methods</dt>
+              <dd>GD / SGD · Mirror descent · Adaptive preconditioning · Matrix functions · Spectral methods</dd>
+            </div>
+            <div>
+              <dt>Writing tools</dt>
+              <dd>LaTeX · XeLaTeX · Overleaf · Git · GitHub</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="cv-section" id="contact" aria-labelledby="contact-title">
+        <div class="cv-section__heading">
+          <p class="section-index">06</p>
+          <h2 id="contact-title">Contact</h2>
+        </div>
+        <div class="cv-section__body">
+          <div class="contact-card">
+            <p>Questions, corrections, and discussions about optimization or linear algebra are welcome.</p>
+            <div class="contact-card__links">
+              <a href="mailto:2024111064@stu.sufe.edu.cn">2024111064@stu.sufe.edu.cn</a>
+              <a href="https://github.com/sufe-WuYuFan" target="_blank" rel="noreferrer">github.com/sufe-WuYuFan ↗</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <p>© <span id="current-year">2026</span> Wu Yufan. Built as a lightweight static academic CV.</p>
+        <a href="#top">Back to top ↑</a>
+      </footer>
+    </main>
+  </div>
+
+  <script src="assets/js/site.js" defer></script>
+</body>
+</html>
