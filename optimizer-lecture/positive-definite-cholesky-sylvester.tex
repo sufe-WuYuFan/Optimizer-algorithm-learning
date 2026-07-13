@@ -1,0 +1,530 @@
+\documentclass[12pt,a4paper]{article}
+
+% ========== Chinese Support ==========
+\usepackage[UTF8]{ctex}
+\setCJKmainfont{SimSun}[BoldFont=SimHei,ItalicFont=KaiTi]
+\setCJKsansfont{SimHei}
+\setCJKmonofont{FangSong}
+
+% ========== Math Packages ==========
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{mathtools}
+\usepackage{bm}
+
+% ========== Graphics & Color ==========
+\usepackage{tikz}
+\usepackage{xcolor}
+\definecolor{theoremblue}{RGB}{41,65,145}
+\definecolor{proofgreen}{RGB}{34,139,34}
+\definecolor{remarkorange}{RGB}{180,100,0}
+
+% ========== Page Layout ==========
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=theoremblue,
+    urlcolor=theoremblue,
+    citecolor=theoremblue
+}
+
+% ========== Theorem Styles ==========
+\newtheoremstyle{mystyle}
+  {\topsep}                    % Space above
+  {\topsep}                    % Space below
+  {\itshape}                   % Body font
+  {}                           % Indent amount
+  {\bfseries\color{theoremblue}} % Theorem head font
+  {.}                          % Punctuation after theorem head
+  {.5em}                       % Space after theorem head
+  {}                           % Theorem head spec
+
+\newtheoremstyle{proofstyle}
+  {\topsep}
+  {\topsep}
+  {\normalfont}
+  {}
+  {\bfseries\color{proofgreen}}
+  {.}
+  {.5em}
+  {}
+
+\theoremstyle{mystyle}
+\newtheorem{theorem}{定理}[section]
+\newtheorem{lemma}[theorem]{引理}
+\newtheorem{corollary}[theorem]{推论}
+\newtheorem{proposition}[theorem]{命题}
+
+\theoremstyle{proofstyle}
+\newtheorem*{proof}{证明}
+
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{定义}
+\newtheorem{example}[theorem]{例}
+
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{注记}
+
+% ========== Macros ==========
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\T}{^{\mathsf{T}}}
+\newcommand{\HH}{^{\mathsf{H}}}
+\newcommand{\x}{\mathbf{x}}
+\newcommand{\y}{\mathbf{y}}
+\newcommand{\A}{\mathbf{A}}
+\newcommand{\Lmat}{\mathbf{L}}
+\newcommand{\I}{\mathbf{I}}
+\newcommand{\zero}{\mathbf{0}}
+
+\DeclareMathOperator{\diag}{diag}
+\DeclareMathOperator{\rank}{rank}
+\DeclareMathOperator{\tr}{tr}
+\DeclareMathOperator{\sgn}{sgn}
+
+% ========== Fancy header ==========
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small 正定性、Cholesky 分解与 Sylvester 判据}
+\fancyhead[R]{\small 最优化理论讲义}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\begin{document}
+
+% ========== Title Page ==========
+\begin{center}
+    \vspace*{2cm}
+    {\Huge\bfseries 正定矩阵、Cholesky 分解\\[4pt] 与 Sylvester 判据的等价性}\\[1.5cm]
+    {\LARGE 最优化理论讲义}\\[2cm]
+    {\large \today}\\[1cm]
+    \vfill
+    \begin{tikzpicture}[overlay]
+        \draw[thick,color=theoremblue!30] (0,0) -- (\textwidth,0);
+    \end{tikzpicture}
+\end{center}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ================================================================
+\section{引言}
+% ================================================================
+
+在数值线性代数与最优化理论中，矩阵的正定性是一个核心概念。判定一个对称矩阵是否正定，有三种经典且彼此等价的方法：
+\begin{enumerate}
+    \item \textbf{定义验证}：直接利用二次型 $ \x\T\A\x > 0 $（对所有非零向量 $\x$）进行判断；
+    \item \textbf{Cholesky 分解}：将矩阵分解为 $ \A = \Lmat\Lmat\T$（$\Lmat$ 为对角元为正的下三角矩阵）；
+    \item \textbf{Sylvester 判据}：检查所有顺序主子式是否均大于零。
+\end{enumerate}
+
+本文系统地阐述这三种刻画之间的等价关系，并给出严格的数学证明。全文假定 $\A = (a_{ij})_{n\times n}$ 为 $n$ 阶实对称矩阵。
+
+% ================================================================
+\section{正定矩阵的定义与基本性质}
+% ================================================================
+
+\begin{definition}[正定矩阵]
+设 $\A \in \R^{n\times n}$ 为实对称矩阵。如果对任意非零向量 $\x \in \R^n \setminus \{\zero\}$，均有
+\begin{equation}\label{eq:pd-def}
+    \x\T\A\x > 0,
+\end{equation}
+则称 $\A$ 为\textbf{正定矩阵}（positive definite matrix），记作 $\A \succ 0$。
+
+若仅满足 $\x\T\A\x \ge 0$（对任意 $\x$），则称 $\A$ 为\textbf{半正定矩阵}（positive semidefinite matrix），记作 $\A \succeq 0$。
+\end{definition}
+
+\begin{definition}[顺序主子式]
+设 $\A = (a_{ij})_{n\times n}$。对 $k = 1,2,\dots,n$，称 $k$ 阶子矩阵
+\[
+    \A_k = \begin{pmatrix}
+        a_{11} & a_{12} & \cdots & a_{1k} \\
+        a_{21} & a_{22} & \cdots & a_{2k} \\
+        \vdots & \vdots & \ddots & \vdots \\
+        a_{k1} & a_{k2} & \cdots & a_{kk}
+    \end{pmatrix}
+\]
+的行列式 $\Delta_k = \det(\A_k)$ 为 $\A$ 的\textbf{$k$ 阶顺序主子式}（leading principal minor）。
+\end{definition}
+
+\begin{proposition}[正定矩阵的基本性质]\label{prop:basic}
+设 $\A \succ 0$，则：
+\begin{enumerate}
+    \item $\A$ 可逆，且 $\A^{-1} \succ 0$；
+    \item $\A$ 的所有特征值均为正实数；
+    \item $\A$ 的所有对角元 $a_{ii} > 0$；
+    \item $\A$ 的任意主子矩阵（不限于顺序主子矩阵）也是正定的；
+    \item $\det(\A) > 0$。
+\end{enumerate}
+\end{proposition}
+
+% ================================================================
+\section{Cholesky 分解定理}
+% ================================================================
+
+\begin{theorem}[Cholesky 分解]\label{thm:cholesky}
+设 $\A \in \R^{n\times n}$ 为实对称矩阵。则
+\[
+    \A \succ 0 \quad \Longleftrightarrow \quad
+    \text{存在唯一的下三角矩阵 $\Lmat$，满足 $\A = \Lmat\Lmat\T$，且 $\Lmat$ 的对角元全为正。}
+\]
+此种分解称为 $\A$ 的\textbf{Cholesky 分解}（Cholesky decomposition / Cholesky factorization）。
+\end{theorem}
+
+\begin{proof}[\textbf{充分性（$\Longleftarrow$）}]
+
+若 $\A = \Lmat\Lmat\T$，其中 $\Lmat$ 的对角元 $\ell_{ii} > 0$（$i=1,\dots,n$），则 $\Lmat$ 可逆。对任意非零向量 $\x \neq \zero$，令 $\y = \Lmat\T\x$。由 $\Lmat$ 可逆知 $\Lmat\T$ 也可逆，故 $\y \neq \zero$。于是
+\[
+    \x\T\A\x = \x\T\Lmat\Lmat\T\x = (\Lmat\T\x)\T(\Lmat\T\x) = \y\T\y = \|\y\|_2^2 > 0.
+\]
+因此 $\A \succ 0$。充分性得证。
+
+\end{proof}
+
+\begin{proof}[\textbf{必要性（$\Longrightarrow$）}]
+
+设 $\A \succ 0$。对矩阵的阶数 $n$ 使用数学归纳法构造 $\Lmat$。
+
+\textbf{奠基 $n=1$：} $\A = [a_{11}]$，由命题 \ref{prop:basic} 知 $a_{11} > 0$。取 $\Lmat = [\ell_{11}] = [\sqrt{a_{11}}]$，则 $\ell_{11} > 0$ 且 $\Lmat\Lmat\T = \ell_{11}^2 = a_{11} = \A$。奠基成立。
+
+\textbf{归纳假设：} 假设对一切 $n-1$ 阶正定矩阵，结论成立。
+
+\textbf{归纳步骤：} 将 $\A$ 分块为
+\[
+    \A = \begin{pmatrix}
+        \A_{n-1} & \mathbf{b} \\[2pt]
+        \mathbf{b}\T & a_{nn}
+    \end{pmatrix},
+\]
+其中 $\A_{n-1}$ 为 $n-1$ 阶对称矩阵，$\mathbf{b} \in \R^{n-1}$，$a_{nn} \in \R$。
+
+由于 $\A \succ 0$，其顺序主子矩阵 $\A_{n-1}$ 也正定（命题 \ref{prop:basic}）。由归纳假设，存在唯一的 $(n-1)\times (n-1)$ 下三角矩阵 $\Lmat_{n-1}$，满足 $\A_{n-1} = \Lmat_{n-1}\Lmat_{n-1}\T$ 且 $\Lmat_{n-1}$ 的对角元全为正。
+
+现在构造
+\[
+    \Lmat = \begin{pmatrix}
+        \Lmat_{n-1} & \mathbf{0} \\[2pt]
+        \boldsymbol{\ell}\T & \ell_{nn}
+    \end{pmatrix},
+\]
+其中 $\boldsymbol{\ell} \in \R^{n-1}$ 和 $\ell_{nn} > 0$ 待定。要求 $\A = \Lmat\Lmat\T$，即
+\[
+    \begin{pmatrix}
+        \A_{n-1} & \mathbf{b} \\[2pt]
+        \mathbf{b}\T & a_{nn}
+    \end{pmatrix}
+    =
+    \begin{pmatrix}
+        \Lmat_{n-1} & \mathbf{0} \\[2pt]
+        \boldsymbol{\ell}\T & \ell_{nn}
+    \end{pmatrix}
+    \begin{pmatrix}
+        \Lmat_{n-1}\T & \boldsymbol{\ell} \\[2pt]
+        \mathbf{0}\T & \ell_{nn}
+    \end{pmatrix}
+    =
+    \begin{pmatrix}
+        \Lmat_{n-1}\Lmat_{n-1}\T & \Lmat_{n-1}\boldsymbol{\ell} \\[2pt]
+        \boldsymbol{\ell}\T\Lmat_{n-1}\T & \boldsymbol{\ell}\T\boldsymbol{\ell} + \ell_{nn}^2
+    \end{pmatrix}.
+\]
+比较各分块得：
+\begin{align}
+    \Lmat_{n-1}\boldsymbol{\ell} &= \mathbf{b}, \label{eq:cholesky-l} \\
+    \boldsymbol{\ell}\T\boldsymbol{\ell} + \ell_{nn}^2 &= a_{nn}. \label{eq:cholesky-lnn}
+\end{align}
+由式 \eqref{eq:cholesky-l} 可唯一确定 $\boldsymbol{\ell} = \Lmat_{n-1}^{-1}\mathbf{b}$（前代法求解下三角方程组，计算量为 $O\big((n-1)^2\big)$）。代入式 \eqref{eq:cholesky-lnn} 得
+\[
+    \ell_{nn}^2 = a_{nn} - \boldsymbol{\ell}\T\boldsymbol{\ell}.
+\]
+
+\textbf{关键：}需要证明 $a_{nn} - \boldsymbol{\ell}\T\boldsymbol{\ell} > 0$，从而 $\ell_{nn} = \sqrt{a_{nn} - \boldsymbol{\ell}\T\boldsymbol{\ell}}$ 可取为正实数。
+
+考虑 $\A$ 的行列式：
+\[
+    \det(\A) = \det\begin{pmatrix}
+        \A_{n-1} & \mathbf{b} \\
+        \mathbf{b}\T & a_{nn}
+    \end{pmatrix}
+    = \det(\A_{n-1}) \cdot \big(a_{nn} - \mathbf{b}\T\A_{n-1}^{-1}\mathbf{b}\big) \quad\text{（分块矩阵行列式公式）}.
+\]
+由于 $\A \succ 0$，有 $\det(\A) > 0$ 且 $\det(\A_{n-1}) > 0$。故
+\[
+    a_{nn} - \mathbf{b}\T\A_{n-1}^{-1}\mathbf{b} > 0.
+\]
+注意到
+\[
+    \boldsymbol{\ell}\T\boldsymbol{\ell} = (\Lmat_{n-1}^{-1}\mathbf{b})\T(\Lmat_{n-1}^{-1}\mathbf{b})
+    = \mathbf{b}\T\Lmat_{n-1}^{-T}\Lmat_{n-1}^{-1}\mathbf{b}
+    = \mathbf{b}\T(\Lmat_{n-1}\Lmat_{n-1}\T)^{-1}\mathbf{b}
+    = \mathbf{b}\T\A_{n-1}^{-1}\mathbf{b}.
+\]
+因此
+\[
+    a_{nn} - \boldsymbol{\ell}\T\boldsymbol{\ell} = a_{nn} - \mathbf{b}\T\A_{n-1}^{-1}\mathbf{b} > 0.
+\]
+故可取 $\ell_{nn} = \sqrt{a_{nn} - \boldsymbol{\ell}\T\boldsymbol{\ell}} > 0$。归纳步骤完成。
+
+由数学归纳法原理，对任意 $n$ 阶正定矩阵 $\A$，存在唯一的下三角矩阵 $\Lmat$（对角元为正）满足 $\A = \Lmat\Lmat\T$。唯一性由构造过程的每一步均唯一确定可知。
+\end{proof}
+
+以上两个方向的证明合起来，完整地建立了定理 \ref{thm:cholesky} 的等价性。
+
+% ================================================================
+\section{Sylvester 判据}
+% ================================================================
+
+\begin{theorem}[Sylvester 判据]\label{thm:sylvester}
+设 $\A \in \R^{n\times n}$ 为实对称矩阵，$\Delta_k = \det(\A_k)$ 为其 $k$ 阶顺序主子式（$k = 1,2,\dots,n$）。则
+\[
+    \A \succ 0 \quad \Longleftrightarrow \quad \Delta_k > 0,\quad \forall\, k = 1,2,\dots,n.
+\]
+即 $\A$ 正定当且仅当其所有顺序主子式均为正。
+\end{theorem}
+
+\begin{proof}[\textbf{必要性（$\Longrightarrow$）——正定 $\Rightarrow$ 顺序主子式为正}]
+
+设 $\A \succ 0$。对任意 $k \in \{1,\dots,n\}$，考虑顺序主子矩阵 $\A_k$。对任意非零向量 $\x_k \in \R^k \setminus \{\zero\}$，将其嵌入 $\R^n$ 中：
+\[
+    \tilde{\x} = \begin{pmatrix} \x_k \\ \mathbf{0}_{n-k} \end{pmatrix} \neq \zero.
+\]
+由 $\A$ 的正定性，
+\[
+    \x_k\T\A_k\x_k = \tilde{\x}\T\A\tilde{\x} > 0.
+\]
+故 $\A_k \succ 0$。由命题 \ref{prop:basic}，正定矩阵的特征值全为正，而行列式等于所有特征值的乘积，故 $\Delta_k = \det(\A_k) > 0$。必要性得证。
+\end{proof}
+
+\begin{proof}[\textbf{充分性（$\Longleftarrow$）——顺序主子式为正 $\Rightarrow$ 正定}]
+
+设 $\Delta_k > 0$ 对一切 $k = 1,\dots,n$ 成立。对矩阵的阶数 $n$ 使用数学归纳法。
+
+\textbf{奠基 $n=1$：} $\A = [a_{11}]$，$\Delta_1 = a_{11} > 0$。对任意 $\x = [x_1] \neq \zero$，有 $\x\T\A\x = a_{11}x_1^2 > 0$。故 $\A \succ 0$。奠基成立。
+
+\textbf{归纳假设：} 假设若 $(n-1)\times(n-1)$ 对称矩阵的所有顺序主子式为正，则该矩阵正定。
+
+\textbf{归纳步骤：} 设 $n$ 阶对称矩阵 $\A$ 满足 $\Delta_k > 0$（$k=1,\dots,n$）。特别地，$\det(\A_{n-1}) = \Delta_{n-1} > 0$，且 $\A_{n-1}$ 的前 $n-2$ 个顺序主子式即 $\Delta_1,\dots,\Delta_{n-2}$ 亦均为正。由归纳假设，$\A_{n-1} \succ 0$。
+
+对 $\A$ 进行如下分块：
+\[
+    \A = \begin{pmatrix}
+        \A_{n-1} & \mathbf{b} \\
+        \mathbf{b}\T & a_{nn}
+    \end{pmatrix}.
+\]
+取试验向量 $\x = \begin{pmatrix} \x_{n-1} \\ x_n \end{pmatrix}$，其中 $\x_{n-1} \in \R^{n-1}$，$x_n \in \R$。计算二次型：
+\begin{align}
+    \x\T\A\x &= \begin{pmatrix} \x_{n-1}\T & x_n \end{pmatrix}
+               \begin{pmatrix} \A_{n-1} & \mathbf{b} \\ \mathbf{b}\T & a_{nn} \end{pmatrix}
+               \begin{pmatrix} \x_{n-1} \\ x_n \end{pmatrix} \nonumber \\
+             &= \x_{n-1}\T\A_{n-1}\x_{n-1} + 2x_n\,\mathbf{b}\T\x_{n-1} + a_{nn}x_n^2. \label{eq:quadratic}
+\end{align}
+
+\textbf{情形 1：} $x_n = 0$。此时 $\x_{n-1} \neq \zero$（否则 $\x = \zero$），故
+\[
+    \x\T\A\x = \x_{n-1}\T\A_{n-1}\x_{n-1} > 0 \quad (\text{由归纳假设 } \A_{n-1} \succ 0).
+\]
+
+\textbf{情形 2：} $x_n \neq 0$。将式 \eqref{eq:quadratic} 视为关于 $\x_{n-1}$ 的二次函数。通过配方法（Schur 补技术），有
+\[
+    \x\T\A\x = (\x_{n-1} + x_n\A_{n-1}^{-1}\mathbf{b})\T\A_{n-1}(\x_{n-1} + x_n\A_{n-1}^{-1}\mathbf{b})
+              + x_n^2\big(a_{nn} - \mathbf{b}\T\A_{n-1}^{-1}\mathbf{b}\big).
+\]
+第一项由于 $\A_{n-1} \succ 0$ 而非负，且当 $\x_{n-1} = -x_n\A_{n-1}^{-1}\mathbf{b}$ 时为零。故关键在于括号内的量：
+\[
+    s := a_{nn} - \mathbf{b}\T\A_{n-1}^{-1}\mathbf{b}
+\]
+称为 $\A_{n-1}$ 在 $\A$ 中的\textbf{Schur 补}（Schur complement）。
+
+由分块矩阵行列式公式：
+\[
+    \det(\A) = \det(\A_{n-1}) \cdot s.
+\]
+已知 $\det(\A) = \Delta_n > 0$ 且 $\det(\A_{n-1}) = \Delta_{n-1} > 0$，故 $s > 0$。因此
+\[
+    \x\T\A\x \ge x_n^2 \cdot s > 0.
+\]
+综合情形 1 和情形 2，对一切 $\x \neq \zero$ 均有 $\x\T\A\x > 0$，即 $\A \succ 0$。充分性得证。
+\end{proof}
+
+% ================================================================
+\section{三者等价的统一证明链}
+% ================================================================
+
+将上述结果串联，我们得到如下完整的等价链：
+
+\begin{theorem}[三大判据的等价性]\label{thm:equivalence}
+设 $\A \in \R^{n\times n}$ 为实对称矩阵，$\Delta_k$ 为其 $k$ 阶顺序主子式（$k=1,\dots,n$）。则以下三个命题等价：
+\begin{enumerate}
+    \item[(I)] $\A \succ 0$（$\A$ 正定）；
+    \item[(II)] 存在唯一的下三角矩阵 $\Lmat$，对角元全正，使得 $\A = \Lmat\Lmat\T$（Cholesky 分解存在）；
+    \item[(III)] $\Delta_k > 0$，$\forall\,k = 1,\dots,n$（所有顺序主子式为正，即 Sylvester 判据成立）。
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}[等价性证明总结]
+
+我们通过以下逻辑链建立了完整的等价性：
+\[
+    \text{(I)} \xrightarrow{\text{定理 \ref{thm:cholesky}（必要性）}} \text{(II)}
+    \xrightarrow{\text{定理 \ref{thm:cholesky}（充分性）}} \text{(I)}
+\]
+\[
+    \text{(I)} \xrightarrow{\text{定理 \ref{thm:sylvester}（必要性）}} \text{(III)}
+    \xrightarrow{\text{定理 \ref{thm:sylvester}（充分性）}} \text{(I)}
+\]
+
+具体而言：
+\begin{itemize}
+    \item \textbf{(I) $\Rightarrow$ (II)：} 通过对矩阵阶数的归纳构造，利用正定性确保每一步 $\ell_{kk}$ 的被开方数为正，构造出 Cholesky 因子 $\Lmat$。
+
+    \item \textbf{(II) $\Rightarrow$ (I)：} $\x\T\A\x = \x\T\Lmat\Lmat\T\x = \|\Lmat\T\x\|_2^2 > 0$（因 $\Lmat$ 可逆），一步得证。
+
+    \item \textbf{(I) $\Rightarrow$ (III)：} 每个顺序主子矩阵 $\A_k$ 继承 $\A$ 的正定性，其特征值全为正，从而行列式（特征值之积）为正。
+
+    \item \textbf{(III) $\Rightarrow$ (I)：} 通过对矩阵阶数的归纳，利用 Schur 补 $s = \det(\A)/\det(\A_{n-1}) > 0$ 和配方法证明二次型恒正。
+\end{itemize}
+
+由于等价关系具有传递性，我们也得到了 \textbf{(II) $\Leftrightarrow$ (III)} 的间接证明：
+\begin{center}
+    Cholesky 分解存在（对角元为正）$\iff$ 所有顺序主子式为正。
+\end{center}
+
+这一等价关系也可以直接验证：由 $\A = \Lmat\Lmat\T$，取 $\A_k$ 为 $\A$ 的 $k$ 阶顺序主子矩阵，$\Lmat_k$ 为 $\Lmat$ 的对应子矩阵，则 $\A_k = \Lmat_k\Lmat_k\T$，故
+\[
+    \Delta_k = \det(\A_k) = \det(\Lmat_k\Lmat_k\T) = \big(\det(\Lmat_k)\big)^2 = \left(\prod_{i=1}^k \ell_{ii}\right)^2 > 0.
+\]
+反之，若所有 $\Delta_k > 0$，则归纳构造过程中每步的 $\ell_{kk} = \sqrt{\Delta_k/\Delta_{k-1}} > 0$（约定 $\Delta_0 = 1$），从而可成功完成 Cholesky 分解。
+\end{proof}
+
+% ================================================================
+\section{数值例子}
+% ================================================================
+
+\begin{example}[验证 3 阶矩阵的正定性]
+考虑矩阵
+\[
+    \A = \begin{pmatrix}
+        4 & 2 & -2 \\
+        2 & 10 & 2 \\
+        -2 & 2 & 6
+    \end{pmatrix}.
+\]
+
+\textbf{方法一（Sylvester 判据）：}
+\begin{align*}
+    \Delta_1 &= \det[4] = 4 > 0, \\
+    \Delta_2 &= \det\begin{pmatrix} 4 & 2 \\ 2 & 10 \end{pmatrix} = 4\times 10 - 2\times 2 = 36 > 0, \\
+    \Delta_3 &= \det(\A) = 4(60-4) - 2(12+4) - 2(4+20) = 224 - 32 - 48 = 144 > 0.
+\end{align*}
+三个顺序主子式均为正，由 Sylvester 判据知 $\A \succ 0$。
+
+\textbf{方法二（Cholesky 分解）：}
+\begin{align*}
+    \ell_{11} &= \sqrt{a_{11}} = \sqrt{4} = 2,\\
+    \ell_{21} &= a_{21}/\ell_{11} = 2/2 = 1,\\
+    \ell_{31} &= a_{31}/\ell_{11} = -2/2 = -1,\\
+    \ell_{22} &= \sqrt{a_{22} - \ell_{21}^2} = \sqrt{10 - 1} = 3,\\
+    \ell_{32} &= (a_{32} - \ell_{31}\ell_{21})/\ell_{22} = (2 - (-1)(1))/3 = 1,\\
+    \ell_{33} &= \sqrt{a_{33} - \ell_{31}^2 - \ell_{32}^2} = \sqrt{6 - 1 - 1} = 2.
+\end{align*}
+故
+\[
+    \Lmat = \begin{pmatrix}
+        2 & 0 & 0 \\
+        1 & 3 & 0 \\
+        -1 & 1 & 2
+    \end{pmatrix},\qquad
+    \Lmat\Lmat\T = \begin{pmatrix}
+        2 & 0 & 0 \\ 1 & 3 & 0 \\ -1 & 1 & 2
+    \end{pmatrix}
+    \begin{pmatrix}
+        2 & 1 & -1 \\ 0 & 3 & 1 \\ 0 & 0 & 2
+    \end{pmatrix}
+    = \begin{pmatrix}
+        4 & 2 & -2 \\ 2 & 10 & 2 \\ -2 & 2 & 6
+    \end{pmatrix} = \A.
+\]
+$\Lmat$ 的对角元 $\{2,3,2\}$ 全为正，故 $\A \succ 0$。同时可验证 $\Delta_k = \prod_{i=1}^k \ell_{ii}^2$：
+\[
+    \Delta_1 = 2^2 = 4,\quad \Delta_2 = 2^2 \times 3^2 = 36,\quad \Delta_3 = 2^2 \times 3^2 \times 2^2 = 144.
+\]
+\end{example}
+
+\begin{example}[非正定矩阵的判定]
+考虑矩阵
+\[
+    \A = \begin{pmatrix}
+        1 & 2 & 3 \\
+        2 & 4 & 5 \\
+        3 & 5 & 6
+    \end{pmatrix}.
+\]
+计算顺序主子式：
+\[
+    \Delta_1 = 1 > 0,\quad
+    \Delta_2 = \det\begin{pmatrix} 1 & 2 \\ 2 & 4 \end{pmatrix} = 4 - 4 = 0,
+\]
+$\Delta_2 = 0$ 不满足全为正的条件，故 $\A$ 不是正定矩阵。事实上，取 $\x = (2,-1,0)\T \neq \zero$，有 $\x\T\A\x = 0$，说明 $\A$ 仅为半正定而非正定。
+
+若尝试进行 Cholesky 分解：$\ell_{11}=1$，$\ell_{21}=2$，但 $\ell_{22} = \sqrt{4-4}=0$，对角元非正数，无法得到对应对角元严格为正的 Cholesky 分解。这从另一方面验证了 $\A$ 的非正定性。
+\end{example}
+
+% ================================================================
+\section{在优化理论中的应用}
+% ================================================================
+
+正定性在最优化理论中起着基石般的作用。以下简要列举几个关键应用场景。
+
+\subsection{梯度下降与 Newton 法中的 Hessian 矩阵}
+
+考虑无约束优化问题 $\min_{\x \in \R^n} f(\x)$，其中 $f$ 二阶连续可微。在局部极小点 $\x^*$ 处，梯度 $\nabla f(\x^*) = \zero$，且 Hessian 矩阵 $\nabla^2 f(\x^*)$ 为半正定。若 $\nabla^2 f(\x^*) \succ 0$（严格正定），则 $\x^*$ 为严格局部极小点，这是二阶充分条件的核心。
+
+在 Newton 法中，迭代方向 $\mathbf{d}_k = -[\nabla^2 f(\x_k)]^{-1}\nabla f(\x_k)$ 为下降方向的\textbf{充要条件}正是 $\nabla^2 f(\x_k) \succ 0$。此时可对 Hessian 进行 Cholesky 分解 $\nabla^2 f(\x_k) = \Lmat\Lmat\T$，从而将 Newton 方程组 $\nabla^2 f(\x_k)\,\mathbf{d}_k = -\nabla f(\x_k)$ 转化为两次三角方程求解：
+\[
+    \Lmat\y = -\nabla f(\x_k), \qquad \Lmat\T\mathbf{d}_k = \y,
+\]
+计算量仅为 $O(n^2)$（相比直接求逆的 $O(n^3)$ 更高效且数值稳定）。
+
+\subsection{信赖域方法与修正 Cholesky 分解}
+
+当 Hessian 矩阵非正定时，Newton 方向可能指向鞍点或极大点。信赖域方法通过求解子问题
+\[
+    \min_{\|\mathbf{d}\| \le \Delta} \Big\{ f(\x_k) + \nabla f(\x_k)\T\mathbf{d} + \frac{1}{2}\mathbf{d}\T\nabla^2 f(\x_k)\mathbf{d} \Big\}
+\]
+来获取下降方向。若 $\nabla^2 f(\x_k)$ 非正定，可对其进行\textbf{修正 Cholesky 分解}：寻找适当的 $\tau > 0$ 使得 $\nabla^2 f(\x_k) + \tau\I \succ 0$，再应用标准 Cholesky 分解。这一技术在拟 Newton 法和约束优化中也有广泛应用。
+
+\subsection{凸性的判定}
+
+函数 $f$ 为凸函数的二阶充要条件是 $\nabla^2 f(\x) \succeq 0$ 对所有 $\x$ 成立。利用 Sylvester 判据，可通过检查 Hessian 的顺序主子式的符号来判断函数的凸性区域，这在高维问题中尤为实用。
+
+% ================================================================
+\section{附录：关键公式速查}
+% ================================================================
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{等价性} & \textbf{数学表述} \\
+\midrule
+定义 $\Leftrightarrow$ Cholesky & $\A \succ 0 \;\Longleftrightarrow\; \exists!\,\Lmat\text{（对角元}>0\text{）}:\A=\Lmat\Lmat\T$ \\[6pt]
+定义 $\Leftrightarrow$ Sylvester & $\A \succ 0 \;\Longleftrightarrow\; \Delta_k>0,\;\forall k=1,\dots,n$ \\[6pt]
+Cholesky $\Leftrightarrow$ Sylvester & $\ell_{kk}>0 \;\Longleftrightarrow\; \Delta_k>0$ \\[6pt]
+Cholesky 迭代公式 & $\ell_{jj} = \sqrt{a_{jj} - \sum_{k=1}^{j-1}\ell_{jk}^2},\quad
+   \ell_{ij} = \frac{1}{\ell_{jj}}\Big(a_{ij} - \sum_{k=1}^{j-1}\ell_{ik}\ell_{jk}\Big),\;(i>j)$ \\[8pt]
+Schur 补与行列式 & $\det(\A) = \det(\A_{n-1})\cdot\big(a_{nn} - \mathbf{b}\T\A_{n-1}^{-1}\mathbf{b}\big)$ \\[6pt]
+$\ell_{kk}$ 与顺序主子式 & $\ell_{kk} = \sqrt{\Delta_k/\Delta_{k-1}},\quad(\Delta_0:=1)$ \\[6pt]
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{1cm}
+
+\begin{center}
+\rule{0.5\textwidth}{0.4pt}\\[6pt]
+{\small 本文为最优化理论学习笔记，系统整理了正定性三种等价判据的严格证明。}
+\end{center}
+
+\end{document}
