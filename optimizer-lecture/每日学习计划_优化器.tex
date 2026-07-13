@@ -1,0 +1,1684 @@
+% !TEX program = xelatex
+\documentclass[11pt,a4paper]{ctexart}
+
+% ============ Packages ============
+\usepackage{amsmath,amssymb,mathtools,bm}
+\usepackage{amsthm}
+\usepackage[colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue]{hyperref}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage[margin=2.2cm,left=2.5cm,right=2cm]{geometry}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tikz}
+\usepackage{fontspec}
+\usepackage{longtable}
+\usepackage{colortbl}
+
+% ============ Formatting ============
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small 深度学习优化器 · 每日高强度学习计划}
+\fancyhead[R]{\small \thepage}
+\fancyfoot[C]{}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}{\Large\bfseries\color{blue!60!black}}{}{0em}{}
+\titleformat{\subsection}{\large\bfseries}{}{0em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{}{0em}{}
+
+\definecolor{theory}{RGB}{70,130,180}
+\definecolor{practice}{RGB}{220,80,60}
+\definecolor{deliver}{RGB}{34,139,34}
+\definecolor{headerbg}{RGB}{30,60,120}
+\definecolor{weekbg}{RGB}{240,248,255}
+\definecolor{daybg}{RGB}{255,255,245}
+
+\newcommand{\theory}[1]{\textcolor{theory}{\small [理论] #1}}
+\newcommand{\practice}[1]{\textcolor{practice}{\small [工程] #1}}
+\newcommand{\reading}[1]{\textcolor{purple!60!black}{\small [阅读] #1}}
+\newcommand{\note}[1]{\textcolor{orange!80!black}{\small [笔记] #1}}
+
+\newenvironment{dayplan}[1]
+  {\begin{center}\begin{tikzpicture}\node[draw=headerbg!50,fill=headerbg!10,rounded corners,inner sep=6pt,text width=0.92\textwidth] {\textbf{#1}};\end{tikzpicture}\end{center}\vspace{-0.3cm}}
+  {}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator{\sgn}{sgn}
+\newcommand{\checkmarkitem}{\item[$\square$]}
+
+\begin{document}
+
+\begin{center}
+{\Huge\bfseries 深度学习优化器：从 Adam 到 Muon 与 PolarGrad}
+
+\vspace{0.5cm}
+{\Large\bfseries 高密度每日学习计划（8 周 · 每日 5--7 小时）}
+
+\vspace{0.3cm}
+{\large 基于老师课件综合制定 · 每周 6 天学习 + 周日休息}
+
+\vspace{0.3cm}
+{\normalsize 教材参考：Bubeck (2015)、Nesterov (2018)、Boyd \& Vandenberghe (2004)、}
+{\normalsize 张贤科《高等线性代数》、Golub \& Van Loan《Matrix Computations》、Horn \& Johnson《Matrix Analysis》}
+
+\vspace{0.3cm}
+\today
+\end{center}
+
+\vspace{0.3cm}
+\rule{\textwidth}{0.5pt}
+
+% ============ 总体说明 ============
+\section*{总体说明}
+
+\begin{itemize}
+  \item \textbf{时间安排}：每周一至周六学习，周日休息。每天 5--7 小时（上午 2.5h + 下午 2.5h + 晚上 1--2h 复习）。
+  \item \textbf{学习方式}：理论推导（上午）+ 工程实践（下午）+ 总结笔记（晚上）。
+  \item \textbf{核心资料}：综合课件 \texttt{optimizer\_lecture\_v2.pdf}（13页）+ 第一周讲义 \texttt{week1.pdf}（15页）+ 线性代数补充 \texttt{linear\_algebra\_supplement.pdf}（19页）。
+  \item \textbf{三个递进层级}：Adam/AdamW（对角预条件）→ Shampoo（Kronecker结构预条件）→ SOAP/Muon/PolarGrad（特征基+谱正交化+极分解）。
+  \item \textbf{每周日}：回顾本周笔记、查漏补缺、整理代码仓库。
+\end{itemize}
+
+\rule{\textwidth}{0.5pt}
+\newpage
+
+% ======================================================================
+\section{第 1 周：GD/SGD 的理论基石}
+% ======================================================================
+
+\begin{center}
+\fcolorbox{headerbg}{weekbg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{学习目标：}深入理解梯度下降收敛理论，掌握下降引理推导，理解条件数如何决定收敛速度。
+\end{minipage}}
+\end{center}
+
+% --- Day 1 ---
+\subsection{周一：L-光滑性与下降引理}
+
+\begin{dayplan}{第 1 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \theory{复习多变量微积分：梯度、Hessian、Taylor 展开}
+  \checkmarkitem \reading{阅读 Bubeck (2015) \S 3.1--3.2 —— 光滑凸优化的基本设定}
+  \checkmarkitem \theory{精读 week1.pdf \S 1--\S 2.1：基本记号、二次函数作为分析工具}
+  \checkmarkitem \theory{手推 $L$-光滑性的三个等价刻画（梯度 Lipschitz $\Leftrightarrow$ 二次上界 $\Leftrightarrow$ co-coercivity）}
+  \checkmarkitem \theory{完成 week1.pdf 练习 1：用积分形式 Taylor 公式逐行验证下降引理}
+\end{itemize}
+\end{dayplan}
+
+\vspace{0.15cm}
+\begin{dayplan}{第 1 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{搭建 Python 实验环境：安装 PyTorch、NumPy、Matplotlib}
+  \checkmarkitem \practice{构造二维二次函数 $f(\theta)=\frac12\theta^\top A\theta$，$A=\operatorname{diag}(1,100)$（$\kappa=100$）}
+  \checkmarkitem \practice{实现最简 GD 优化器（\texttt{for} 循环 + 梯度更新）}
+  \checkmarkitem \practice{验证：$\eta \ge 2/L$ 时发散；$\eta = 1/L$ 时稳定下降}
+\end{itemize}
+\end{dayplan}
+
+\vspace{0.15cm}
+\begin{dayplan}{第 1 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{手写下降引理完整证明（白纸默写，不看笔记）}
+  \checkmarkitem \note{整理今天学到的 3 个等价刻画，画一张关系图}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 2 ---
+\subsection{周二：强凸性与条件数}
+
+\begin{dayplan}{第 2 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \theory{精读 week1.pdf \S 2.2--\S 2.3：$\mu$-强凸性的定义与等价刻画}
+  \checkmarkitem \theory{推导强凸函数的梯度单调性不等式 $\langle\nabla f(x)-\nabla f(y),x-y\rangle \ge \mu\|x-y\|^2$}
+  \checkmarkitem \theory{深入理解条件数 $\kappa = L/\mu$ 的几何含义（最大/最小特征值比 → 椭球的长短轴比）}
+  \checkmarkitem \theory{研读 week1.pdf 中条件数与「窄谷」的等高线图示}
+  \checkmarkitem \note{手推：对 $f=\frac12\theta^\top A\theta$，证明 $\kappa=\lambda_{\max}/\lambda_{\min}$}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 2 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{扩展实验：构造 $\kappa \in \{1, 5, 10, 50, 100, 500, 1000\}$ 的多个二次函数}
+  \checkmarkitem \practice{对每个 $\kappa$ 运行 GD（$\eta=1/L$），绘制 $\log(f(\theta_t)-f^\star)$ vs 迭代数曲线}
+  \checkmarkitem \practice{在等高线图上画出 GD 前 20 步轨迹，观察「之字形」现象}
+  \checkmarkitem \practice{验证：收敛步数随 $\kappa$ 线性增长}
+  \checkmarkitem \practice{实现不同步长选择：$\eta=1/L$、$\eta=2/(\mu+L)$（最优）、$\eta=1/\mu$，对比收敛速度}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 2 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{用自己的话写出：为什么条件数是优化的核心挑战？预条件方法试图做什么？}
+  \checkmarkitem \note{整理 GD 在凸/强凸下的收敛率对比表}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 3 ---
+\subsection{周三：GD 完整收敛证明}
+
+\begin{dayplan}{第 3 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \theory{精读 week1.pdf \S 3：下降引理到 GD 收敛的完整证明链}
+  \checkmarkitem \theory{手推凸情形 GD 的 $\mathcal{O}(1/T)$ 收敛率（telescoping sum 技巧）}
+  \checkmarkitem \theory{手推强凸情形 GD 的线性收敛：$\|\theta_T-\theta^\star\|^2 \le \left(\frac{\kappa-1}{\kappa+1}\right)^{2T}\|\theta_0-\theta^\star\|^2$}
+  \checkmarkitem \theory{理解 co-coercivity 不等式在证明中的关键作用}
+  \checkmarkitem \theory{完成 week1.pdf 练习 2：二次函数上 GD 的精确收敛因子}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 3 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{完成 week1.pdf 工程任务 1：实现并可视化 GD}
+  \checkmarkitem \practice{以 $\eta \in \{0.01, 0.1, 0.5, 1.0, 1.5, 1.9, 2.1\} \times (1/\lambda_{\max})$ 运行 GD}
+  \checkmarkitem \practice{绘制不同 $\eta$ 下 $f(\theta_t)$ vs 迭代次数的 semilogy 图}
+  \checkmarkitem \practice{实现 Polyak 平均 $\bar\theta_T = \frac1T\sum_t \theta_t$，对比输出质量}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 3 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{默写 GD 在凸 + 光滑下的完整证明（从下降引理到 $\mathcal{O}(1/T)$）}
+  \checkmarkitem \note{整理 telescoping sum 和 Jensen 不等式的使用时机}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 4 ---
+\subsection{周四：SGD 与随机近似的收敛理论}
+
+\begin{dayplan}{第 4 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \theory{精读 week1.pdf \S 4：从 GD 到 SGD，噪声的引入}
+  \checkmarkitem \theory{理解两个标准假设：无偏性 $\mathbb{E}[g_t|\theta_t]=\nabla f(\theta_t)$ 和有界方差}
+  \checkmarkitem \theory{手推 SGD 在凸光滑条件下的收敛界}
+  \[
+    \mathbb{E}[f(\bar\theta_T)] - f(\theta^\star) \le \frac{\|\theta_0-\theta^\star\|^2}{2\eta T} + \frac{\eta\sigma^2}{2}
+  \]
+  \checkmarkitem \theory{理解方差项 $\frac{\eta\sigma^2}{2}$ 不随 $T$ 消失——这是 SGD 的根本瓶颈}
+  \checkmarkitem \theory{推导最优步长 $\eta = \frac{D}{\sigma\sqrt{T}}$，得 $\mathcal{O}(1/\sqrt{T})$}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 4 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{实现 SGD（梯度添加高斯噪声 $\mathcal{N}(0,\sigma^2 I)$）}
+  \checkmarkitem \practice{固定 $\eta=1/L$，变化 $\sigma^2 \in \{0.1, 1, 10\}$，绘制轨迹（多次运行 + 标准差带）}
+  \checkmarkitem \practice{画 $\log(f(\theta_T)-f^\star)$ vs $\log T$，验证 SGD 斜率约 $-1/2$，GD 斜率约 $-1$}
+  \checkmarkitem \practice{实现递减步长 $\eta_t = 1/(L+t)$ 和 $\eta_t = 1/\sqrt{t}$，对比常数步长}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 4 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{对比 GD vs SGD：收敛率、每步计算量、总样本复杂度}
+  \checkmarkitem \note{完成 week1.pdf 练习 4：SGD 方差的实验测量}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 5 ---
+\subsection{周五：Momentum、Nesterov 加速与学习率调度}
+
+\begin{dayplan}{第 5 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \theory{精读 week1.pdf \S 5--\S 6：Momentum 和 Nesterov 加速梯度的完整分析}
+  \checkmarkitem \theory{推导 Momentum 在特征基下解耦为 $d$ 个独立的二阶递推}
+  \checkmarkitem \theory{证明 Momentum 将 $\kappa$ 替换为 $\sqrt{\kappa}$（$\frac{\sqrt{\kappa}-1}{\sqrt{\kappa}+1}$ vs $\frac{\kappa-1}{\kappa+1}$）}
+  \checkmarkitem \theory{理解 Nesterov「前瞻梯度」的巧妙之处}
+  \checkmarkitem \theory{完成 week1.pdf 练习 5：Momentum 状态空间特征分析}
+  \checkmarkitem \theory{学习 warmup + cosine decay 的数学形式与动机}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 5 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{实现 Momentum（$\beta=0.9$）和 Nesterov 优化器}
+  \checkmarkitem \practice{在 $\kappa=1000$ 的二维二次函数上对比 GD、Momentum、Nesterov}
+  \checkmarkitem \practice{绘制 $\log(f(\theta_t)-f^\star)$ 对比曲线，验证 Momentum/Nesterov 加速倍数}
+  \checkmarkitem \practice{在等高线图中观察 Momentum 的「过冲」与 GD 的「之字形」}
+  \checkmarkitem \practice{在非强凸函数（logistic regression loss）上比较 3 种学习率调度}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 5 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{整理 GD → Momentum → Nesterov 的演化逻辑链}
+  \checkmarkitem \note{绘制收敛率对比表：凸情形 $\mathcal{O}(1/T)$ vs $\mathcal{O}(1/T^2)$，强凸情形 $\kappa$ vs $\sqrt{\kappa}$}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 6 ---
+\subsection{周六：综合实验 + 第 1 周收尾}
+
+\begin{dayplan}{第 6 天 · 上午（2.5h）—— 综合理论复习}
+\begin{itemize}
+  \checkmarkitem \theory{精读 optimizer\_lecture\_v2.pdf \S 2--\S 4：随机优化基础（SAA、Sub-Gaussian、浓度不等式）}
+  \checkmarkitem \theory{手推 Hoeffding 不等式从 Chernoff bound 出发的完整证明}
+  \checkmarkitem \theory{对比 SAA 和 SA 两种范式的样本复杂度}
+  \checkmarkitem \theory{理解 Sub-Gaussian 随机变量的定义与常见实例}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 6 天 · 下午（3h）—— 综合工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{统一接口：在单一文件中实现 GD / SGD / Momentum / Nesterov，API 对齐 torch.optim}
+  \checkmarkitem \practice{实现完整的实验脚本：支持切换函数（凸/强凸/非凸）、优化器、参数配置}
+  \checkmarkitem \practice{制作等高线轨迹图对比集（一张图包含 4 种优化器在 $\kappa=100$ 下的轨迹）}
+  \checkmarkitem \practice{完成 week1.pdf 工程任务 3（Momentum vs Nesterov）和任务 4（学习率调度对比）}
+  \checkmarkitem \note{整理第 1 周所有代码到 \texttt{week1\_optimizers/} 文件夹}
+\end{itemize}
+\end{dayplan}
+
+\vspace{0.3cm}
+\begin{center}
+\fcolorbox{deliver}{daybg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{[完成]  第 1 周核心交付物：}下降引理手写证明 + GD/SGD 收敛率完整推导 + 4 种优化器实现 + 等高线轨迹对比图 + 条件数影响验证报告
+\end{minipage}}
+\end{center}
+
+\newpage
+
+% ======================================================================
+\section{第 2 周：Mirror Descent 与 AdaGrad 的 Regret 分析}
+% ======================================================================
+
+\begin{center}
+\fcolorbox{headerbg}{weekbg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{学习目标：}理解「选优化器就是选几何」的核心思想，掌握 AdaGrad 的 regret bound 推导，能阐明 Mirror Descent 如何通过改变 Bregman divergence 改变优化几何。
+\end{minipage}}
+\end{center}
+
+% --- Day 7 ---
+\subsection{周一：Bregman Divergence 与 Mirror Descent 框架}
+
+\begin{dayplan}{第 7 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \theory{学习 Bregman Divergence 的定义：$D_\psi(x,y) = \psi(x) - \psi(y) - \langle\nabla\psi(y),x-y\rangle$}
+  \checkmarkitem \theory{证明 Bregman divergence 的非负性和非对称性}
+  \checkmarkitem \theory{手推三点恒等式（Bregman 的核心工具）：
+    $D_\psi(z,x)-D_\psi(z,y)-D_\psi(y,x) = \langle\nabla\psi(y)-\nabla\psi(x), z-y\rangle$}
+  \checkmarkitem \theory{理解 Mirror Descent 更新：$\theta_{t+1} = \arg\min_\theta\{\eta\langle g_t,\theta\rangle + D_\psi(\theta,\theta_t)\}$}
+  \checkmarkitem \theory{推导：取 $\psi(\theta)=\frac12\|\theta\|_2^2$ → MD 退化为标准 GD}
+  \checkmarkitem \theory{推导：取 $\psi(\theta)=\frac12\theta^\top H\theta$ → MD 退化为预条件 GD}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 7 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{实现 Mirror Descent 框架（支持可插拔的 $\psi$ 函数）}
+  \checkmarkitem \practice{取 $\psi(\theta)=\frac12\|\theta\|_2^2$（对应 GD），验证退化正确}
+  \checkmarkitem \practice{取 $\psi(\theta)=\frac12\theta^\top H\theta$（对应预条件 GD），验证方向等价于 Newton 步}
+  \checkmarkitem \practice{可视化 Bregman divergence 在 1D 情况下的几何（两个不同 $\psi$ 的对比）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 7 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{手写 MD 框架笔记：更新公式推导 + 退化为 GD/预条件 GD 的过程}
+  \checkmarkitem \note{用自己的话解释「选优化器就是选几何」}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 8 ---
+\subsection{周二：在线凸优化与 Regret 分析}
+
+\begin{dayplan}{第 8 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \theory{学习在线凸优化 (OCO) 设定：每个时刻选择 $\theta_t$，观测损失 $f_t$，目标是最小化 regret}
+  \checkmarkitem \theory{理解 Regret 的定义：$R_T = \sum_{t=1}^T f_t(\theta_t) - \min_\theta \sum_{t=1}^T f_t(\theta)$}
+  \checkmarkitem \theory{学习 Online Gradient Descent 的 regret bound 推导：$R_T \le \frac{\|\theta_1-\theta^\star\|^2}{2\eta} + \frac{\eta}{2}\sum_t\|g_t\|^2$}
+  \checkmarkitem \theory{理解步长 $\eta = \mathcal{O}(1/\sqrt{T})$ 给出 $\mathcal{O}(\sqrt{T})$ 的 regret 的推导逻辑}
+  \checkmarkitem \theory{学习 FTRL (Follow-The-Regularized-Leader) 基本概念}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 8 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{实现 Online Gradient Descent 在简单在线回归问题上的实验}
+  \checkmarkitem \practice{追踪并绘制累计 regret 随时间的变化曲线}
+  \checkmarkitem \practice{对比不同步长选择（固定 vs $\mathcal{O}(1/\sqrt{t})$）的 regret 差异}
+  \checkmarkitem \practice{实现 FTRL 的简化版并在同一问题上对比}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 8 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{整理 OGD regret bound 推导的完整骨架}
+  \checkmarkitem \note{画出 OCO 设定的时间线示意图}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 9 ---
+\subsection{周三：AdaGrad 的 Regret Bound（上）}
+
+\begin{dayplan}{第 9 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \reading{精读 Duchi et al. (2011) AdaGrad 论文的 Theorem 1--3}
+  \checkmarkitem \theory{理解 AdaGrad 的核心思想：用梯度平方累积量逐坐标调整步长}
+  \checkmarkitem \theory{推导对角 AdaGrad 的更新公式和 regret bound 骨架}
+  \[
+    R_T \le \sqrt{2}D_\infty \sum_{i=1}^d \sqrt{\sum_{t=1}^T g_{t,i}^2}
+  \]
+  \checkmarkitem \theory{理解为什么这个 bound 在稀疏梯度下远优于 SGD（$\sqrt{\#\text{nonzero}}$ 的差距）}
+  \checkmarkitem \theory{研读在线预条件次梯度法的 regret bound 抽象形式（课件 \S 5 末）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 9 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{实现对角 AdaGrad：维护 $s_{t,i} = \sum_{k\le t} g_{k,i}^2$，更新 $\theta_{t+1,i} = \theta_{t,i} - \eta g_{t,i}/\sqrt{s_{t,i}+\varepsilon}$}
+  \checkmarkitem \practice{构造稀疏梯度场景：每个样本只激活 5\% 的坐标（模拟 NLP 中稀有特征的场景）}
+  \checkmarkitem \practice{在该场景上比较 SGD vs AdaGrad 的收敛速度}
+  \checkmarkitem \practice{可视化每坐标的有效学习率 $\eta/\sqrt{s_{t,i}}$ 随时间的变化}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 9 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{写出 AdaGrad regret bound 推导的骨架（关键步骤，不要求每一步细节）}
+  \checkmarkitem \note{分析：为什么稀疏性下 AdaGrad 的优势巨大？}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 10 ---
+\subsection{周四：AdaGrad 的 Regret Bound（下）与 RMSProp}
+
+\begin{dayplan}{第 10 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \theory{完成 AdaGrad full-matrix 版本的 regret bound 推导阅读}
+  \checkmarkitem \theory{理解 AdaGrad 的实际问题：$s_t$ 单调递增 → 有效学习率持续下降 → 训练过早停止}
+  \checkmarkitem \theory{学习 RMSProp 的解决方案：$s_t = \beta s_{t-1} + (1-\beta)g_t^{\odot 2}$（EMA 替代累加）}
+  \checkmarkitem \theory{理解 EMA 的遗忘机制如何解决 AdaGrad 的「学习率消失」问题}
+  \checkmarkitem \theory{对比 AdaGrad（凸优化理论完备）vs RMSProp（深度学习实践有效）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 10 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{实现 RMSProp 优化器}
+  \checkmarkitem \practice{在非稀疏连续优化问题上对比 AdaGrad vs RMSProp：观察 AdaGrad 过早停止}
+  \checkmarkitem \practice{可视化 AdaGrad（持续下降）vs RMSProp（稳定）的有效学习率演化}
+  \checkmarkitem \practice{复现 AdaGrad 在稀疏场景的优势 + RMSProp 在非稀疏场景的优势}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 10 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{制作 AdaGrad → RMSProp → Adam 的演化图（每个节点的动机和改进）}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 11 ---
+\subsection{周五：集中复习 Mirror Descent 视角}
+
+\begin{dayplan}{第 11 天 · 上午（2.5h）—— 综合理论复习}
+\begin{itemize}
+  \checkmarkitem \theory{重新推导 MD 框架下的 regret bound（用 Bregman divergence 替代欧氏距离）}
+  \checkmarkitem \theory{理解：MD 的 regret bound 是 $\frac{1}{\eta}D_\psi(\theta^\star,\theta_1) + \frac{\eta}{2}\sum_t\|g_t\|_{*}^2$}
+  \checkmarkitem \theory{选取不同 $\psi$ → 不同的 $D_\psi$ → 不同的距离度量 → 不同的几何适应性}
+  \checkmarkitem \theory{推导 ExpGrad（$\psi$ 取负熵 → 概率单纯形上的在线学习）}
+  \checkmarkitem \theory{理解：为什么 $\psi$ 的选择决定了优化器对数据几何的适应性}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 11 天 · 下午（2.5h）—— 综合工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{完善 Mirror Descent 实现，添加 ExpGrad（负熵 mirror map）}
+  \checkmarkitem \practice{在概率单纯形约束的在线问题上对比 OGD vs ExpGrad}
+  \checkmarkitem \practice{整理 AdaGrad / RMSProp 代码到统一接口}
+  \checkmarkitem \practice{完成完整对比实验：SGD / Momentum / Nesterov / AdaGrad / RMSProp 在稀疏+稠密场景下}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 11 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{绘制 MD 框架全景图：$\psi$ → $D_\psi$ → 更新规则 → 适应场景}
+  \checkmarkitem \note{检查第 2 周所有推导是否完成，查漏补缺}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 12 ---
+\subsection{周六：第 2 周收尾 + Adam 预习}
+
+\begin{dayplan}{第 12 天 · 上午（2.5h）—— 收尾复习}
+\begin{itemize}
+  \checkmarkitem \theory{完成第 2 周所有未完成的推导}
+  \checkmarkitem \theory{预习 Adam 论文摘要和 introduction（了解 Adam = RMSProp + Momentum）}
+  \checkmarkitem \theory{写出 AdaGrad → RMSProp → Adam 的递推公式对比}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 12 天 · 下午（2.5h）—— 代码整理 + 预习实验}
+\begin{itemize}
+  \checkmarkitem \practice{整理第 2 周所有代码到 \texttt{week2\_mirror\_adagrad/} 文件夹}
+  \checkmarkitem \practice{为所有5个优化器写统一接口的单元测试（toy problem 上的预期行为）}
+  \checkmarkitem \practice{预习：用 PyTorch 的 \texttt{torch.optim.Adam} 在 MNIST 上跑一个 baseline}
+\end{itemize}
+\end{dayplan}
+
+\vspace{0.3cm}
+\begin{center}
+\fcolorbox{deliver}{daybg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{[完成]  第 2 周核心交付物：}MD 框架完整笔记 + AdaGrad regret bound 推导骨架 + RMSProp/AdaGrad 实现 + 稀疏场景对比实验 + 5 种优化器统一接口
+\end{minipage}}
+\end{center}
+
+\newpage
+
+% ======================================================================
+\section{第 3 周：Adam / AdamW / AMSGrad}
+% ======================================================================
+
+\begin{center}
+\fcolorbox{headerbg}{weekbg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{学习目标：}彻底理解 Adam 的每个组件（EMA、偏差修正、对角缩放）及其理论陷阱。能从实验中解释「Adam 为什么怕旋转」。
+\end{minipage}}
+\end{center}
+
+% --- Day 13 ---
+\subsection{周一：Adam 完整推导}
+
+\begin{dayplan}{第 13 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \reading{精读 Kingma \& Ba (2014) Adam 论文全文（重点 Section 2--4）}
+  \checkmarkitem \theory{手推 Adam 偏差修正的完整证明}
+  \[
+    \mathbb{E}[m_t] = (1-\beta_1)\sum_{k=1}^t \beta_1^{t-k}\mathbb{E}[g_k] = (1-\beta_1^t)\mu
+    \;\Longrightarrow\; \hat m_t = \frac{m_t}{1-\beta_1^t}
+  \]
+  \checkmarkitem \theory{同理验证 $\hat v_t = v_t/(1-\beta_2^t)$ 的修正}
+  \checkmarkitem \theory{理解 Adam 的预条件结构：$P_t = \operatorname{diag}(\hat v_t + \varepsilon^2)^{-1/2}$}
+  \checkmarkitem \theory{写出 Adam 的完整更新公式并标注每个参数的角色}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 13 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{从零实现 Adam（不使用框架，纯 NumPy/PyTorch 张量操作）}
+  \checkmarkitem \practice{特别关注偏差修正的实现（冷启动行为）}
+  \checkmarkitem \practice{在二维二次函数 $\kappa=100$ 上运行 Adam，与 SGD/Momentum 对比轨迹}
+  \checkmarkitem \practice{可视化 $m_t, v_t, \hat m_t, \hat v_t$ 在训练过程中的演化}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 13 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{默写 Adam 算法框（伪代码级别）}
+  \checkmarkitem \note{用自己的话解释：偏差修正为什么必要？去掉会怎样？}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 14 ---
+\subsection{周二：Adam 的理论视角——Gauss-Newton 联系}
+
+\begin{dayplan}{第 14 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \theory{精读 optimizer\_lecture\_v2.pdf \S 5 末：Adam 与 Gauss-Newton 联系的深入分析}
+  \checkmarkitem \theory{理解广义 Gauss-Newton (GGN) 矩阵：$G(w) = J(w)^\top H_\ell(w) J(w)$}
+  \checkmarkitem \theory{推导 GGN 对角元与梯度平方的关系}
+  \checkmarkitem \theory{理解核心洞察：Adam 本质上在用\textbf{对角 Gauss-Newton 做预条件}——比「对角 Hessian」更准确}
+  \checkmarkitem \theory{理解 Fisher 信息矩阵 vs GGN vs 经验 Fisher（$\mathbb{E}[g g^\top]$）的关系}
+  \checkmarkitem \theory{阅读课件 \S 3--\S 4：Weight Decay、Gradient Clipping 的数学动机}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 14 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{在 MNIST 两层 MLP 上用 Adam 训练，记录并可视化每层权重的 $v_t$ 分布}
+  \checkmarkitem \practice{比较不同 $\beta_2$ 值（0.9, 0.99, 0.999, 0.9999）对 $v_t$ 演化速度的影响}
+  \checkmarkitem \practice{实现 Gradient Clipping（value clipping 和 norm clipping）}
+  \checkmarkitem \practice{在 RNN 玩具问题上测试 clipping 的效果}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 14 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{绘制 GGN → Fisher → $\mathbb{E}[g^2]$ 的关系图}
+  \checkmarkitem \note{整理 Weight Decay 和 Gradient Clipping 的公式卡片}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 15 ---
+\subsection{周三：AdamW —— Weight Decay 解耦}
+
+\begin{dayplan}{第 15 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \reading{精读 Loshchilov \& Hutter (2017) AdamW 论文（重点 Section 2）}
+  \checkmarkitem \theory{手推 L2 正则 + Adam 的不等价性分析}
+  \[
+    \Delta w_t = -\eta\frac{\nabla\mathcal{L}(w_t) + \lambda w_t}{\sqrt{\hat v_t}+\varepsilon}
+    \neq (1-\eta\lambda) w_t - \eta\frac{\nabla\mathcal{L}(w_t)}{\sqrt{\hat v_t}+\varepsilon}
+  \]
+  \checkmarkitem \theory{理解：对梯度大的坐标，$\sqrt{\hat v_t}$ 大，正则化被削弱；对梯度小的坐标反而加强}
+  \checkmarkitem \theory{写出 AdamW 的解耦更新公式：
+    $w_{t+1} = (1-\eta\lambda)w_t - \eta\frac{\hat m_t}{\sqrt{\hat v_t}+\varepsilon}$}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 15 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{实现 AdamW（在 Adam 基础上解耦 weight decay）}
+  \checkmarkitem \practice{构造实验：L2-Adam vs AdamW 在相同 $\lambda$ 下的 loss 和验证精度对比}
+  \checkmarkitem \practice{可视化每个参数实际接收的正则化强度 $\eta\lambda/\sqrt{\hat v_{t,i}+\varepsilon}$（L2）vs $\eta\lambda$（AdamW）}
+  \checkmarkitem \practice{在 MNIST 上验证 AdamW 的泛化优势}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 15 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{用自己的话解释：L2 正则和 Weight Decay 为什么在 Adam 中不等价而在 SGD 中等价？}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 16 ---
+\subsection{周四：AMSGrad —— Adam 收敛理论的陷阱}
+
+\begin{dayplan}{第 16 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \reading{精读 Reddi et al. (2018) AMSGrad 论文（重点 Adam 反例的构造）}
+  \checkmarkitem \theory{理解 Adam 原始收敛证明的错误：「有效学习率不单调」为什么可能破坏收敛}
+  \checkmarkitem \theory{构造 Adam 发散的反例（Reddi et al. 中的简单在线问题）}
+  \checkmarkitem \theory{理解 AMSGrad 的修正：$\hat v_t = \max(\hat v_{t-1}, v_t)$ 确保单调性}
+  \checkmarkitem \theory{对比 Adam vs AMSGrad 的 regret bound 差异}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 16 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{实现 AMSGrad（$\max$ 操作确保 $\hat v_t$ 非减）}
+  \checkmarkitem \practice{在 Reddi 反例上测试：Adam（可能发散）vs AMSGrad（应稳定收敛）}
+  \checkmarkitem \practice{在标准深度学习任务（MNIST MLP）上对比三者的实际表现}
+  \checkmarkitem \practice{可视化 Adam 的 $v_t$ 在反例中下降的坐标（导致有效学习率上升的坐标）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 16 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{整理 Adam / AdamW / AMSGrad 三者的公式差异和适用场景表}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 17 ---
+\subsection{周五：Adam 旋转敏感性 —— 核心实验日}
+
+\begin{dayplan}{第 17 天 · 上午（2.5h）—— 理论分析}
+\begin{itemize}
+  \checkmarkitem \theory{精读 linear\_algebra\_supplement.pdf \S 8.3：为什么 Adam 怕旋转}
+  \checkmarkitem \theory{理解：对角预条件不是坐标不变的（coordinate-dependent）}
+  \checkmarkitem \theory{推导：对正交变换 $\tilde\theta = Q^\top\theta$，Adam 的预条件器变化不是简单的坐标变换}
+  \checkmarkitem \theory{核心公式：$(Q^\top g_t)^{\odot 2} \neq Q^\top(g_t^{\odot 2})$}
+  \checkmarkitem \theory{理解 Muon 的协变性对比：$\operatorname{sgn}(Q_L^\top G Q_R) = Q_L^\top \operatorname{sgn}(G) Q_R$}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 17 天 · 下午（3h）—— 旋转敏感性实验}
+\begin{itemize}
+  \checkmarkitem \practice{构造旋转二次函数 $f(x) = \frac12 x^\top Q \operatorname{diag}(1,\kappa) Q^\top x$}
+  \checkmarkitem \practice{固定 $\kappa=100$，变化旋转角 $\theta \in \{0^\circ, 15^\circ, 30^\circ, 45^\circ, 60^\circ, 75^\circ, 90^\circ\}$}
+  \checkmarkitem \practice{对每个 $\theta$，运行 Adam / SGD / Momentum 至收敛，记录步数}
+  \checkmarkitem \practice{绘制「收敛步数 vs $\theta$」图，验证 SGD 不变而 Adam 敏感}
+  \checkmarkitem \practice{单元测试：$\theta=0^\circ$（无旋转）且 $\kappa=1000$ 时，验证 Adam 最差/最好坐标有效学习率比 $\approx\sqrt{1000}$}
+  \checkmarkitem \practice{在等高线图上画出 Adam 在不同旋转角下的轨迹}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 17 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{写一段话解释「为什么 Adam 怕旋转而 SGD 不怕」（这是面试常见问题）}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 18 ---
+\subsection{周六：第 3 周收尾 + Adam 综合实验报告}
+
+\begin{dayplan}{第 18 天 · 上午（2.5h）—— 理论回顾}
+\begin{itemize}
+  \checkmarkitem \theory{回顾 Adam 的 Gauss-Newton 视角、AdamW 解耦、AMSGrad 修正}
+  \checkmarkitem \theory{完成课件练习：Adam 在在线凸优化下的 regret bound 形式}
+  \checkmarkitem \theory{阅读 Adam 的后续变体：Adamax、Nadam、RAdam（了解即可）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 18 天 · 下午（2.5h）—— 实验整理}
+\begin{itemize}
+  \checkmarkitem \practice{整理 Adam/AdamW/AMSGrad 实验代码}
+  \checkmarkitem \practice{撰写 Adam 旋转敏感性实验报告（含图和分析）}
+  \checkmarkitem \practice{整理代码到 \texttt{week3\_adam/} 文件夹}
+  \checkmarkitem \practice{预习：阅读 Shampoo 论文摘要，了解动机}
+\end{itemize}
+\end{dayplan}
+
+\vspace{0.3cm}
+\begin{center}
+\fcolorbox{deliver}{daybg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{[完成]  第 3 周核心交付物：}Adam 偏差修正完整证明 + AdamW/AMSGrad 实现 + 旋转敏感性实验报告（含「步数 vs $\theta$」图）+ 有效学习率可视化 + Adam/AdamW/AMSGrad 对比表
+\end{minipage}}
+\end{center}
+
+\newpage
+
+% ======================================================================
+\section{第 4 周：矩阵分析与 Kronecker 积}
+% ======================================================================
+
+\begin{center}
+\fcolorbox{headerbg}{weekbg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{学习目标：}扎实掌握 Kronecker 积、矩阵函数、向量化等线性代数工具，为理解 Shampoo 做好准备。能不看笔记独立证明 Kronecker 积的 5 条核心性质。
+\end{minipage}}
+\end{center}
+
+% --- Day 19 ---
+\subsection{周一：谱分解与矩阵函数}
+
+\begin{dayplan}{第 19 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \theory{精读 linear\_algebra\_supplement.pdf \S 1：特征值与谱分解}
+  \checkmarkitem \theory{完整手推实对称矩阵谱定理的证明（特征值为实数 + 特征向量正交 + 正交对角化）}
+  \checkmarkitem \theory{理解正定/半正定的等价刻画（特征值、Cholesky、Sylvester 判据）}
+  \checkmarkitem \theory{精读 \S 5：矩阵函数的定义 $\phi(A) = Q\phi(\Lambda)Q^\top$}
+  \checkmarkitem \theory{强调：$\phi(A)$ 不是逐元素函数！$\exp(A) \neq [e^{a_{ij}}]$}
+  \checkmarkitem \theory{掌握常用矩阵函数：$A^{-1}, A^{-1/2}, A^{-1/4}, A^{1/4}$}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 19 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{用 NumPy/PyTorch 实现 eigendecomposition 并验证 $A=Q\Lambda Q^\top$}
+  \checkmarkitem \practice{实现矩阵函数 $\phi(A)$（通过特征分解）}
+  \checkmarkitem \practice{验证 $\phi(A)$ vs 逐元素 $\phi$ 的差异（构造 $2\times2$ 矩阵对比）}
+  \checkmarkitem \practice{实现 $A^{-1/4}$ 并验证 $(A^{-1/4})^4 \approx A^{-1}$}
+  \checkmarkitem \practice{实验：不同 $\varepsilon$ 对 $A+\varepsilon I$ 条件数的影响（$\varepsilon \in \{10^{-6}, 10^{-4}, 10^{-2}, 1\}$）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 19 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{默写谱定理的完整证明（3 个部分）}
+  \checkmarkitem \note{制作矩阵函数 vs 逐元素函数的对比表}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 20 ---
+\subsection{周二：SVD 完整推导}
+
+\begin{dayplan}{第 20 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \theory{精读 linear\_algebra\_supplement.pdf \S 2：SVD 的构造性证明}
+  \checkmarkitem \theory{手推：利用 $G^\top G$ 的谱分解构造 SVD（完整证明）}
+  \checkmarkitem \theory{理解 SVD 的几何含义：旋转→缩放→旋转}
+  \checkmarkitem \theory{掌握 Eckart-Young 定理：截断 SVD 是最佳低秩近似}
+  \checkmarkitem \theory{理解 Gram 矩阵的优化含义：$G_tG_t^\top$ vs $G_t^\top G_t$ 在 Shampoo 中的角色}
+  \checkmarkitem \theory{完成线性代数补充练习 2：SVD 唯一性的条件}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 20 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{实现 SVD 并通过几何可视化：在 $\R^2$ 中画单位圆及其在 $G$ 下的像（椭圆）}
+  \checkmarkitem \practice{标注左右奇异向量的方向和奇异值数值}
+  \checkmarkitem \practice{实现幂迭代法（power iteration）计算最大奇异值}
+  \checkmarkitem \practice{验证 Eckart-Young：对随机矩阵做截断 SVD，计算近似误差 vs 理论下界}
+  \checkmarkitem \practice{可视化梯度矩阵 $G_t$ 的奇异值分布直方图（用 MNIST 训练的中间结果）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 20 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{默写 SVD 的构造性证明}
+  \checkmarkitem \note{整理 SVD vs 谱分解 vs 极分解的适用条件和公式对比}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 21 ---
+\subsection{周三：三类矩阵范数 + 极分解}
+
+\begin{dayplan}{第 21 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \theory{精读 linear\_algebra\_supplement.pdf \S 3--\S 4：矩阵范数与极分解}
+  \checkmarkitem \theory{掌握三类矩阵范数的定义和关系}
+  \begin{itemize}
+    \item Frobenius：$\|G\|_F = \sqrt{\sum\sigma_i^2}$
+    \item 谱范数：$\|G\|_{op} = \sigma_{\max}$
+    \item 核范数：$\|G\|_* = \sum\sigma_i$
+  \end{itemize}
+  \checkmarkitem \theory{证明关系不等式：$\|G\|_{op} \le \|G\|_F \le \sqrt{r}\|G\|_{op}$}
+  \checkmarkitem \theory{手推谱范数与核范数的对偶性：$\sup_{\|X\|_{op}\le1}\langle G,X\rangle = \|G\|_*$}
+  \checkmarkitem \theory{学习极分解 $G=UP$（$U$ 正交，$P\succeq0$），与 SVD 的关系：$U_{\text{polar}} = U_{\text{SVD}}V_{\text{SVD}}^\top$}
+  \checkmarkitem \theory{注意易错点：SVD 的 $U$ 和极分解的 $U$ 是不同的矩阵！}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 21 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{实现三类矩阵范数的计算并验证关系不等式}
+  \checkmarkitem \practice{实现极分解（通过 SVD：$U=U_{\text{SVD}}V_{\text{SVD}}^\top, P=V_{\text{SVD}}\Sigma V_{\text{SVD}}^\top$）}
+  \checkmarkitem \practice{验证 $\|UV^\top\|_{op}=1$ 且 $\langle G,UV^\top\rangle = \|G\|_*$（对偶性的数值验证）}
+  \checkmarkitem \practice{可视化：对 $2\times2$ 矩阵，画出其极分解的 $U$（旋转）和 $P$（拉伸）的几何效果}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 21 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{整理 SVD vs 极分解的辨析表（易错表格已在课件中，补充自己的理解）}
+  \checkmarkitem \note{完成线性代数补充练习 3：对 $2\times2$ 矩阵直接验证核范数对偶性}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 22 ---
+\subsection{周四：Kronecker 积——理论与证明}
+
+\begin{dayplan}{第 22 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \theory{精读 linear\_algebra\_supplement.pdf \S 6：Kronecker 积完整版}
+  \checkmarkitem \theory{学习 Kronecker 积定义：$A\otimes B = [a_{ij}B]_{ij}$}
+  \checkmarkitem \theory{逐条手推并做笔记——\textbf{5 条核心性质}：}
+  \begin{enumerate}
+    \item 混合积：$(A\otimes B)(C\otimes D) = AC\otimes BD$
+    \item 逆：$(A\otimes B)^{-1} = A^{-1}\otimes B^{-1}$
+    \item 幂函数：$(A\otimes B)^\alpha = A^\alpha\otimes B^\alpha$（含完整谱分解证明）
+    \item 向量化：$\operatorname{vec}(AXB) = (B^\top\otimes A)\operatorname{vec}(X)$
+    \item 迹关系
+  \end{enumerate}
+  \checkmarkitem \theory{理解性质 3 在 Shampoo 中的关键应用：$L^{-1/4}\otimes R^{-1/4} = (L^{1/2}\otimes R^{1/2})^{-1/4}$}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 22 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{用 NumPy 实现 Kronecker 积并逐一验证上述 5 条性质}
+  \checkmarkitem \practice{验证 $\operatorname{vec}(AXB) = (B^\top\otimes A)\operatorname{vec}(X)$（构造随机矩阵测试）}
+  \checkmarkitem \practice{实现并验证 $(A\otimes B)^\alpha = A^\alpha\otimes B^\alpha$（分别计算两边并比较）}
+  \checkmarkitem \practice{完成线性代数补充练习 4：证明 $\operatorname{rank}(A\otimes B) = \operatorname{rank}(A)\cdot\operatorname{rank}(B)$}
+  \checkmarkitem \practice{实现 full-matrix AdaGrad 在小规模（$d\le100$）问题上的运行，观察 $H_t$ 的存储和计算开销}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 22 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{不看笔记，独立在白纸上证明 Kronecker 积的 5 条核心性质}
+  \checkmarkitem \note{解释：为什么 full-matrix AdaGrad 在深度学习中不可行？（存储 $\mathcal{O}(d^2)$ + 矩阵根 $\mathcal{O}(d^3)$）}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 23 ---
+\subsection{周五：Loewner 偏序与矩阵不等式 + Shampoo 理论基础}
+
+\begin{dayplan}{第 23 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \theory{精读 linear\_algebra\_supplement.pdf \S 7：Loewner 偏序}
+  \checkmarkitem \theory{理解 $A\preceq B \iff B-A$ 正半定}
+  \checkmarkitem \theory{掌握 3 条关键性质：保序、逆变、算子单调性（Löwner-Heinz 定理）}
+  \checkmarkitem \theory{手推 Shampoo 核心不等式}
+  \[
+    \frac{1}{r} g g^\top \preceq I_m \otimes (G^\top G),\qquad
+    \frac{1}{r} g g^\top \preceq (G G^\top) \otimes I_n
+  \]
+  \checkmarkitem \theory{理解这个不等式在 regret bound 证明中的关键作用}
+  \checkmarkitem \theory{完成线性代数补充练习 6：对秩-1 矩阵 $G=uv^\top$ 直接验证 Shampoo 不等式}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 23 天 · 下午（2.5h）—— 工程实践}
+\begin{itemize}
+  \checkmarkitem \practice{实现 Loewner 序的数值验证（检查 $A\preceq B$ 是否成立）}
+  \checkmarkitem \practice{对随机梯度矩阵 $G_t$，验证 Shampoo 的 Kronecker 不等式在数值上成立}
+  \checkmarkitem \practice{完成线性代数补充工程练习 1--4（SVD 幂迭代、矩阵根计算对比、SVD 几何可视化、NS 迭代）}
+  \checkmarkitem \practice{整理所有线性代数实现到 \texttt{week4\_linear\_algebra/} 文件夹}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 23 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{完成线性代数补充的理论练习 5：Newton-Schulz 的收敛阶分析}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 24 ---
+\subsection{周六：第 4 周收尾——线性代数知识地图}
+
+\begin{dayplan}{第 24 天 · 上午（2.5h）—— 综合复习}
+\begin{itemize}
+  \checkmarkitem \theory{回顾线性代数补充 \S 8：从线性代数到优化器的知识地图}
+  \checkmarkitem \theory{填写每个优化器依赖的线性代数工具表}
+  \checkmarkitem \theory{重做第 4 周所有证明（不看笔记）}
+  \checkmarkitem \theory{精读 optimizer\_lecture\_v2.pdf \S 7（Shampoo 章节）作为预习}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 24 天 · 下午（2.5h）—— 测试}
+\begin{itemize}
+  \checkmarkitem \practice{自我测试：随机抽取一条 Kronecker 性质，在白板上手推证明}
+  \checkmarkitem \practice{自我测试：默写 SVD 构造性证明的 3 个步骤}
+  \checkmarkitem \practice{自我测试：解释 $\operatorname{sgn}(G)$ 与极分解的关系}
+  \checkmarkitem \practice{预习 Shampoo 算法伪代码，理解 $L^{-1/4}GR^{-1/4}$ 的结构}
+\end{itemize}
+\end{dayplan}
+
+\vspace{0.3cm}
+\begin{center}
+\fcolorbox{deliver}{daybg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{[完成]  第 4 周核心交付物：}Kronecker 积 5 条性质完整证明 + SVD 构造性证明 + 极分解实现 + 矩阵函数验证代码 + 线性代数知识地图 + 所有线性代数练习
+\end{minipage}}
+\end{center}
+
+\newpage
+
+% ======================================================================
+\section{第 5 周：实现矩阵版 Shampoo}
+% ======================================================================
+
+\begin{center}
+\fcolorbox{headerbg}{weekbg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{学习目标：}理解 Shampoo 如何用 Kronecker 结构降低 full-matrix 预条件代价，亲手实现并实验。能画出 $L_t,R_t$ 条件数变化图。
+\end{minipage}}
+\end{center}
+
+% --- Day 25 ---
+\subsection{周一：Shampoo 理论深度研读}
+
+\begin{dayplan}{第 25 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \reading{精读 Gupta et al. (2018) Shampoo 论文（完整通读）}
+  \checkmarkitem \theory{理解 full-matrix AdaGrad → Shampoo 的 Kronecker 近似推导链}
+  \begin{itemize}
+    \item 起点：$\operatorname{vec}(W_{t+1}) = \operatorname{vec}(W_t) - \eta(\sum g_s g_s^\top)^{-1/2}\operatorname{vec}(G_t)$
+    \item Kronecker 近似：$\sum g_s g_s^\top \approx L^{1/2} \otimes R^{1/2}$
+    \item 因此：$H_t^{-1/2} \approx L^{-1/4} \otimes R^{-1/4}$
+    \item 利用向量化公式恢复矩阵形式：$W_{t+1} = W_t - \eta L^{-1/4}GR^{-1/4}$
+  \end{itemize}
+  \checkmarkitem \theory{掌握 $-1/4$ 指数的来源：对 $p$ 阶张量，每个 mode 用 $A_{t,i}^{-1/(2p)}$}
+  \checkmarkitem \theory{证明：若 $G=U\Sigma V^\top$，则 $GG^\top=U\Sigma^2U^\top$，$G^\top G=V\Sigma^2V^\top$（左右因子的非零特征值相同）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 25 天 · 下午（2.5h）—— 理解实现细节}
+\begin{itemize}
+  \checkmarkitem \practice{在纸上模拟 Shampoo 的一步更新（小矩阵 $2\times3$，手算验证）}
+  \checkmarkitem \practice{画图：$L_t$ 捕获行空间（输出神经元间相关性）、$R_t$ 捕获列空间（输入特征间相关性）}
+  \checkmarkitem \practice{计算 Shampoo vs Adam vs full-matrix AdaGrad 的存储开销对比}
+  \checkmarkitem \practice{写伪代码：Shampoo 的完整算法（含 EMA 和 eigendecomposition 调度）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 25 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{默写 Shampoo 算法框，标注每个步骤的维度和含义}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 26 ---
+\subsection{周二：Shampoo 基础实现}
+
+\begin{dayplan}{第 26 天 · 上午（2.5h）—— 编码实现}
+\begin{itemize}
+  \checkmarkitem \practice{对单层线性网络 $f(W;x)=Wx$（$W\in\mathbb{R}^{n\times m}$），实现简化 Shampoo：}
+  \begin{itemize}
+    \item 维护 $L_t = \beta L_{t-1} + (1-\beta)G_t G_t^\top$
+    \item 维护 $R_t = \beta R_{t-1} + (1-\beta)G_t^\top G_t$
+    \item 每 $K$ 步用 \texttt{torch.linalg.eigh} 计算 $L_t^{-1/4}$ 和 $R_t^{-1/4}$
+    \item 更新：$W_{t+1} = W_t - \eta L_t^{-1/4} G_t R_t^{-1/4}$
+  \end{itemize}
+  \checkmarkitem \practice{注意数值稳定性：$L_t + \varepsilon I$ 和 $R_t + \varepsilon I$ 确保正定性}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 26 天 · 下午（2.5h）—— 调试与验证}
+\begin{itemize}
+  \checkmarkitem \practice{在二次矩阵函数 $f(W)=\frac12\|AW-W^\star\|_F^2$ 上测试（$A$ 可控制条件数）}
+  \checkmarkitem \practice{验证：当 $A=I$（条件数=1），Shampoo 不劣于 SGD}
+  \checkmarkitem \practice{验证：当 $A$ 病态（条件数很大），Shampoo 优于 Adam}
+  \checkmarkitem \practice{数值稳定性监控：每 $K$ 步记录 $\lambda_{\min}$、$\lambda_{\max}$、条件数、NaN 检测}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 26 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{整理 Shampoo 实现的注意事项（damping、EMA 参数、eigh 频率）}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 27 ---
+\subsection{周三：Shampoo 在 MNIST 上的实验}
+
+\begin{dayplan}{第 27 天 · 上午（2h）—— 实验准备}
+\begin{itemize}
+  \checkmarkitem \practice{搭建 MNIST 两层 MLP 实验环境（统一数据加载、训练循环、评估流程）}
+  \checkmarkitem \practice{实现 baseline：AdamW 在 MNIST MLP 上的训练}
+  \checkmarkitem \practice{将 Shampoo 适配到两层 MLP（每层权重矩阵独立维护 $L_t,R_t$）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 27 天 · 下午（3h）—— 正式实验}
+\begin{itemize}
+  \checkmarkitem \practice{在 MNIST 两层 MLP 上比较 AdamW vs Shampoo 的 loss 曲线和 test accuracy}
+  \checkmarkitem \practice{记录 wall-clock time：Shampoo 每步比 Adam 慢多少？总训练时间差多少？}
+  \checkmarkitem \practice{可视化：每层 $L_t,R_t$ 的条件数随训练步数的变化}
+  \checkmarkitem \practice{可视化：不同参数的有效学习率（Shampoo 的 $L^{-1/4}(\cdot)R^{-1/4}$ vs Adam 的 $1/\sqrt{\hat v}$）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 27 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{分析实验结果：Shampoo 什么时候赢？什么时候输？为什么？}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 28 ---
+\subsection{周四：消融实验（一）—— 基更新频率 $K$}
+
+\begin{dayplan}{第 28 天 · 上午（2.5h）—— 实验}
+\begin{itemize}
+  \checkmarkitem \practice{消融实验：比较 $K \in \{1, 10, 50, 100, 200, 500\}$ 对 Shampoo 的影响}
+  \checkmarkitem \practice{对每个 $K$，记录：最终 loss、收敛所需步数、总 wall-clock time}
+  \checkmarkitem \practice{绘制「loss vs 步数」和「loss vs wall-clock」的双维度对比图}
+  \checkmarkitem \practice{观察：$K=1$（每步都做 eigh）→ 计算极慢但收敛最快？还是过拟合噪声？}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 28 天 · 下午（2.5h）—— 消融实验（二）—— Damping $\varepsilon$}
+\begin{itemize}
+  \checkmarkitem \practice{消融实验：比较 $\varepsilon \in \{10^{-8}, 10^{-6}, 10^{-4}, 10^{-2}, 1\}$ 对稳定性的影响}
+  \checkmarkitem \practice{记录：各 $\varepsilon$ 下 $L_t,R_t$ 的有效条件数 $\frac{\lambda_{\max}+\varepsilon}{\lambda_{\min}+\varepsilon}$}
+  \checkmarkitem \practice{分析：$\varepsilon$ 过大（预条件器退化为 $I$）vs $\varepsilon$ 过小（数值不稳定）的 trade-off}
+  \checkmarkitem \practice{总结 Shampoo 的最优超参数配置}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 28 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{撰写消融实验笔记：$K$ 和 $\varepsilon$ 如何影响 loss 收敛和 wall-clock 的 trade-off}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 29 ---
+\subsection{周五：Newton-Schulz 迭代替代 eigendecomposition}
+
+\begin{dayplan}{第 29 天 · 上午（2.5h）—— 理论学习 + 实现}
+\begin{itemize}
+  \checkmarkitem \theory{学习 Newton-Schulz 迭代用于计算 $A^{-1/4}$（课件 \S 11 + 线性代数补充 \S 5.4）}
+  \checkmarkitem \theory{推导：$X_{k+1} = \frac{3}{2}X_k - \frac{1}{2}X_k^3 A$ 收敛到 $A^{-1/2}$}
+  \checkmarkitem \theory{理解如何拓展到 $A^{-1/4}$：先算 $A^{-1/2}$，再算 $(A^{-1/2})^{1/2}$}
+  \checkmarkitem \practice{在 Shampoo 中实现 Newton-Schulz 迭代替代 \texttt{eigh}}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 29 天 · 下午（2.5h）—— 对比实验}
+\begin{itemize}
+  \checkmarkitem \practice{对比：eigendecomposition vs NS 迭代的精度（以 eigh 为 ground truth）}
+  \checkmarkitem \practice{对比：eigendecomposition vs NS 迭代的 wall-clock time（在不同矩阵大小下）}
+  \checkmarkitem \practice{决定在你的实验中使用哪种方法并说明理由}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 29 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{分析 NS 迭代的优劣：什么时候用 eigh？什么时候用 NS？}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 30 ---
+\subsection{周六：Shampoo 实验报告 + 预习 SOAP}
+
+\begin{dayplan}{第 30 天 · 上午（2.5h）—— 实验整理}
+\begin{itemize}
+  \checkmarkitem \practice{整理所有 Shampoo 实验数据到统一表格}
+  \checkmarkitem \practice{制作 Shampoo 实验综合报告：MNIST 对比 + $K$ 消融 + $\varepsilon$ 消融 + NS vs eigh}
+  \checkmarkitem \practice{整理代码到 \texttt{week5\_shampoo/} 文件夹}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 30 天 · 下午（2.5h）—— 预习 SOAP}
+\begin{itemize}
+  \checkmarkitem \reading{阅读 Vyas et al. (2024) SOAP 论文的 Introduction 和 Algorithm 部分}
+  \checkmarkitem \theory{理解 SOAP = Shampoo 的几何 + Adam 的 EMA 平滑}
+  \checkmarkitem \note{写预习笔记：SOAP 和 Shampoo 的关键区别是什么？}
+\end{itemize}
+\end{dayplan}
+
+\vspace{0.3cm}
+\begin{center}
+\fcolorbox{deliver}{daybg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{[完成]  第 5 周核心交付物：}Shampoo 完整实现 + MNIST 实验报告 + $K$ 值消融实验 + $\varepsilon$ 消融实验 + NS vs eigh 对比 + 条件数演化图
+\end{minipage}}
+\end{center}
+
+\newpage
+
+% ======================================================================
+\section{第 6 周：实现简化 SOAP + Muon 入门}
+% ======================================================================
+
+\begin{center}
+\fcolorbox{headerbg}{weekbg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{学习目标：}理解 SOAP 融合 Shampoo 几何与 Adam EMA 的机制，亲手实现并做消融实验。初步学习 Muon 的 Newton-Schulz 正交化原理。
+\end{minipage}}
+\end{center}
+
+% --- Day 31 ---
+\subsection{周一：SOAP 理论深度研读}
+
+\begin{dayplan}{第 31 天 · 上午（2.5h）—— 理论推导}
+\begin{itemize}
+  \checkmarkitem \reading{精读 Vyas et al. (2024) SOAP 论文全文}
+  \checkmarkitem \theory{理解核心动机：Shampoo 给出好坐标系 $(Q_L,Q_R)$，但缺乏 EMA 平滑；Adam 有 EMA 但只能对角预条件}
+  \checkmarkitem \theory{掌握 SOAP 完整算法流程（4 个步骤）：}
+  \begin{enumerate}
+    \item 维护 $L_t,R_t$（Shampoo 因子）
+    \item 每 $K$ 步计算 $Q_L,Q_R$（特征基）
+    \item 旋转梯度：$\tilde G_t = Q_L^\top G_t Q_R$
+    \item 在 $\tilde G_t$ 上运行 Adam：$\tilde m_t,\tilde v_t$ 的 EMA
+    \item 旋回：$\Delta W_t = Q_L\left(\frac{\hat{\tilde m}_t}{\sqrt{\hat{\tilde v}_t}+\varepsilon}\right)Q_R^\top$
+  \end{enumerate}
+  \checkmarkitem \theory{推导基变换状态迁移公式：$\tilde m^{\text{new}} = (Q_L^{\text{new}})^\top Q_L^{\text{old}} \tilde m^{\text{old}} (Q_R^{\text{old}})^\top Q_R^{\text{new}}$}
+  \checkmarkitem \theory{理解：不迁移状态 → 特征向量符号歧义 + 方向错位 → loss spike}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 31 天 · 下午（2.5h）—— 理解实现细节}
+\begin{itemize}
+  \checkmarkitem \practice{在纸上模拟 SOAP 的一步更新（小矩阵 $2\times3$，含基变换的状态迁移）}
+  \checkmarkitem \practice{画图说明：特征基 $(Q_L,Q_R)$ 的物理含义？基变换时 Adam 状态 $\tilde m,\tilde v$ 为什么需要变？}
+  \checkmarkitem \practice{比较 Shampoo（用 $L^{-1/4},R^{-1/4}$ 做特征值缩放）vs SOAP（在特征基内做 Adam）的关键差异}
+  \checkmarkitem \practice{写伪代码：SOAP 完整算法（区分首次和后续基更新）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 31 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{默写 SOAP 算法框 + 状态迁移公式}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 32 ---
+\subsection{周二：SOAP 基础实现}
+
+\begin{dayplan}{第 32 天 · 上午（2.5h）—— 编码实现}
+\begin{itemize}
+  \checkmarkitem \practice{在 Week 5 的 Shampoo 代码基础上，实现 SOAP：}
+  \begin{itemize}
+    \item 每 $K$ 步计算 $Q_L,Q_R$（\texttt{torch.linalg.eigh}）
+    \item 每步计算 $\tilde G_t = Q_L^\top G_t Q_R$
+    \item 维护 $\tilde m_t,\tilde v_t$（EMA，逐元素）
+    \item 更新：$W_{t+1} = W_t - \eta Q_L\left(\frac{\hat{\tilde m}_t}{\sqrt{\hat{\tilde v}_t}+\varepsilon}\right)Q_R^\top$
+  \end{itemize}
+  \checkmarkitem \practice{实现基变换时的 Adam 状态迁移（\textbf{不要重置} $\tilde m,\tilde v$ 为零！）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 32 天 · 下午（2.5h）—— 调试}
+\begin{itemize}
+  \checkmarkitem \practice{在旋转二次函数上测试 SOAP，验证对旋转不敏感（相比 Adam）}
+  \checkmarkitem \practice{检查：状态迁移前后的 $\tilde m_t$ 是否保持一致性（量级不应突变）}
+  \checkmarkitem \practice{对比：有状态迁移 vs 重置状态为 0 的 loss 曲线（应看到 spike）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 32 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{记录实现中遇到的坑（特征向量符号、数值稳定性、迁移矩阵计算）}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 33 ---
+\subsection{周三：SOAP vs Shampoo vs Adam 三者对比}
+
+\begin{dayplan}{第 33 天 · 上午（2h）—— 实验准备}
+\begin{itemize}
+  \checkmarkitem \practice{搭建统一实验框架：同一训练循环中切换 Adam / Shampoo / SOAP}
+  \checkmarkitem \practice{实现旋转二次函数实验：$f(W)=\frac12\|AW-W^\star\|_F^2$（$A$ 控制行/列条件数）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 33 天 · 下午（3h）—— 正式实验}
+\begin{itemize}
+  \checkmarkitem \practice{旋转二次函数实验：对比 Adam / Shampoo / SOAP 的收敛轨迹}
+  \checkmarkitem \practice{变化 $A$ 的条件数 $\kappa \in \{1,10,100,1000\}$，记录三者的收敛步数}
+  \checkmarkitem \practice{在两层 MLP（MNIST）上对比三者的 test accuracy 和收敛速度}
+  \checkmarkitem \practice{绘制三者的 loss 曲线（同图对比）和 wall-clock vs accuracy 的 Pareto 图}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 33 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{分析：什么场景下 SOAP > Shampoo > Adam？反过来呢？}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 34 ---
+\subsection{周四：SOAP 消融实验}
+
+\begin{dayplan}{第 34 天 · 上午（2.5h）—— 消融实验}
+\begin{itemize}
+  \checkmarkitem \practice{消融实验 1：固定 $Q_L=I,Q_R=I$（退化到 Adam）vs 正常 SOAP → 验证特征基的贡献}
+  \checkmarkitem \practice{消融实验 2：变化 $K \in \{10, 50, 100, 200, 500\}$ → 基更新频率的影响}
+  \checkmarkitem \practice{消融实验 3：「不做基变换」直接重置 $\tilde m,\tilde v$ 为零 vs 正确迁移 → 观察 loss spike}
+  \checkmarkitem \practice{消融实验 4：有无 EMA 预条件器（$\beta_L,\beta_R$ 取 1 即无 EMA）的影响}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 34 天 · 下午（2.5h）—— 实验结果分析}
+\begin{itemize}
+  \checkmarkitem \practice{整理消融实验数据，绘制对比图}
+  \checkmarkitem \practice{分析每个组件的贡献：特征基（几何）+ EMA（平滑）+ 状态迁移（一致性）}
+  \checkmarkitem \practice{撰写 SOAP 实验报告：包括实验设置、结果、分析}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 34 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{总结 SOAP 的设计智慧：每个组件解决什么问题？去掉会怎样？}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 35 ---
+\subsection{周五：Muon 入门——Newton-Schulz 正交化}
+
+\begin{dayplan}{第 35 天 · 上午（2.5h）—— 理论}
+\begin{itemize}
+  \checkmarkitem \reading{阅读 Jordan \& Bernstein et al. (2024) Muon 论文}
+  \checkmarkitem \theory{精读 optimizer\_lecture\_v2.pdf \S 9--\S 10：Muon 的完整推导}
+  \checkmarkitem \theory{理解 Muon 的核心算法（极简！）：}
+  \[
+    B_t = \mu B_{t-1} + G_t \;\text{（动量累积）},\quad
+    O_t = \operatorname{NewtonSchulz}_5(B_t),\quad
+    W_{t+1} = W_t - \eta O_t
+  \]
+  \checkmarkitem \theory{理解惊人效果：1.5B Transformer → 仅需 10 GPU-hours（$1.35\times$ 加速）}
+  \checkmarkitem \theory{学习 Newton-Schulz 迭代的数学原理：多项式 $\phi(x)=ax+bx^3+cx^5$ 逼近 $\operatorname{sgn}(x)$}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 35 天 · 下午（2.5h）—— 实现}
+\begin{itemize}
+  \checkmarkitem \practice{实现 Newton-Schulz 5 步迭代（含归一化和转置步骤）}
+  \checkmarkitem \practice{对随机 $100\times100$ 矩阵 $M$，计算 $\operatorname{sgn}(M)=UV^\top$（SVD 为 ground truth）}
+  \checkmarkitem \practice{记录 $\|X_k - \operatorname{sgn}(M)\|_F$ 随 $k$ 的变化（1--10 次迭代），验证收敛速度}
+  \checkmarkitem \practice{实现简化 Muon 在二维矩阵分解 toy problem 上的运行}
+  \checkmarkitem \practice{可视化更新矩阵的奇异值演化（Muon 将它们全部置 1 → 均衡化）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 35 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{理解 Muon 的设计哲学：不依赖二阶矩，只用动量 + 正交化 → 内存比 AdamW 更轻！}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 36 ---
+\subsection{周六：第 6 周收尾 + 完整对比报告}
+
+\begin{dayplan}{第 36 天 · 上午（2.5h）—— 理论收尾}
+\begin{itemize}
+  \checkmarkitem \theory{重读 SOAP 论文的实验部分，理解在多大模型规模下 SOAP > AdamW/Shampoo}
+  \checkmarkitem \theory{阅读 Muon 论文的实验部分（NanoGPT speedrunning 的配置）}
+  \checkmarkitem \note{写一段话总结第 3--6 周的核心发现}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 36 天 · 下午（2.5h）—— 代码整理}
+\begin{itemize}
+  \checkmarkitem \practice{整理 SOAP 和 Muon 代码到统一接口}
+  \checkmarkitem \practice{制作第 3--6 周完整对比报告：Adam / AdamW / AMSGrad / Shampoo / SOAP / Muon}
+  \checkmarkitem \practice{包含维度：收敛速度、内存开销、旋转敏感性、超参数敏感度}
+\end{itemize}
+\end{dayplan}
+
+\vspace{0.3cm}
+\begin{center}
+\fcolorbox{deliver}{daybg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{[完成]  第 6 周核心交付物：}SOAP 完整实现（含状态迁移）+ 三者对比实验 + 4 项消融实验 + Muon 简化实现 + NS 迭代收敛验证 + 6 种优化器对比报告
+\end{minipage}}
+\end{center}
+
+\newpage
+
+% ======================================================================
+\section{第 7 周：系统文献阅读 + Muon/PolarGrad 深度 + 最陡下降统一视角}
+% ======================================================================
+
+\begin{center}
+\fcolorbox{headerbg}{weekbg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{学习目标：}建立完整的优化器知识地图，理解最陡下降统一视角，掌握 Muon 和 PolarGrad 的数学本质，制作优化器全景对比表。
+\end{minipage}}
+\end{center}
+
+% --- Day 37 ---
+\subsection{周一：系统文献复习（一）—— 核心 6 篇论文}
+
+\begin{dayplan}{第 37 天 · 上午（3h）—— 深度复习}
+\begin{itemize}
+  \checkmarkitem \reading{重读 Kingma \& Ba (2014) Adam —— 关注 Theorem 4.1（regret bound）的证明结构}
+  \checkmarkitem \reading{重读 Loshchilov \& Hutter (2017) AdamW —— 关注 Section 2 的 L2 vs WD 对比实验数据}
+  \checkmarkitem \reading{重读 Reddi et al. (2018) AMSGrad —— 关注 Adam 反例的数学构造}
+  \checkmarkitem \reading{重读 Duchi et al. (2011) AdaGrad —— 关注 Theorem 1--5 的证明骨架}
+  \checkmarkitem \reading{重读 Gupta et al. (2018) Shampoo —— 关注收敛定理的条件和证明策略}
+  \checkmarkitem \reading{重读 Vyas et al. (2024) SOAP —— 关注消融实验的设计}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 37 天 · 下午（2.5h）—— 制作全景对比表}
+\begin{itemize}
+  \checkmarkitem \practice{制作「优化器全景对比表」，包含以下 7 个维度：}
+  \begin{enumerate}
+    \item 预条件器 $P_t$ 的数学形式
+    \item 额外内存（big-O，假设参数总维度 $d$，矩阵参数 $m\times n$）
+    \item 每步计算复杂度（前向+反向+优化器更新）
+    \item 收敛保证所需的假设（凸性、光滑性、有界方差……）
+    \item 是否坐标不变（rotation-invariant）
+    \item 主要局限或陷阱
+    \item 典型推荐场景
+  \end{enumerate}
+  \checkmarkitem \note{覆盖：SGD / Momentum / Nesterov / AdaGrad / RMSProp / Adam / AdamW / AMSGrad / Shampoo / SOAP / Muon / PolarGrad}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 37 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{在 A3 大小的纸上手绘优化器全景图（演化关系 + 核心创新 + 代价）}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 38 ---
+\subsection{周二：Muon 深度——谱范数最陡下降}
+
+\begin{dayplan}{第 38 天 · 上午（2.5h）—— 理论}
+\begin{itemize}
+  \checkmarkitem \theory{精读 optimizer\_lecture\_v2.pdf \S 10--\S 11：最陡下降统一视角}
+  \checkmarkitem \theory{推导：不同范数下的最陡下降产生不同优化器}
+  \[
+    w_{t+1} = \argmin_w\left\{\langle g_t,w-w_t\rangle + \frac{1}{2\eta}\|w-w_t\|^2\right\}
+  \]
+  \checkmarkitem \theory{完成课件练习：证明 $\argmin_{\|O\|_{op}\le 1}\|O-G\|_F^2 = UV^\top$（用 von Neumann 迹不等式）}
+  \checkmarkitem \theory{理解核心结论：Muon = 在\textbf{谱范数}下的最陡下降方向}
+  \checkmarkitem \theory{证明 $\operatorname{sgn}(G)$ 是核范数的最小范数次梯度}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 38 天 · 下午（2.5h）—— 实验}
+\begin{itemize}
+  \checkmarkitem \practice{完成课件工程练习 1：实现 Muon 简化版 + 可视化奇异值演化}
+  \checkmarkitem \practice{完成课件工程练习 2：Adam vs Muon 旋转敏感性（$f(W)=\frac12\|AW-W^\star\|_F^2$）}
+  \checkmarkitem \practice{构造 $A$ 的条件数变化实验，记录两者的收敛步数}
+  \checkmarkitem \practice{在 MNIST 两层 MLP 上初步对比 AdamW vs Muon}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 38 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{自己写一段话解释「为什么 Muon 能加速训练」——准备向同行解释}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 39 ---
+\subsection{周三：PolarGrad 深度——极分解统一框架}
+
+\begin{dayplan}{第 39 天 · 上午（2.5h）—— 理论}
+\begin{itemize}
+  \checkmarkitem \reading{阅读 Lau, Long \& Su (2025) PolarGrad 论文}
+  \checkmarkitem \theory{精读 optimizer\_lecture\_v2.pdf \S 12：苏炜杰的关键贡献}
+  \checkmarkitem \theory{理解「曲率预条件（Adam）」vs「梯度预条件（Muon）」的精确区分}
+  \checkmarkitem \theory{掌握 PolarGrad 更新：$W_{t+1}=W_t-\eta\cdot U_t\cdot\phi(P_t)$}
+  \begin{itemize}
+    \item $\phi(P)=I$ → 退化到 Muon
+    \item $\phi(P)=P$ → 退化到动量 SGD
+    \item $\phi(P)=\|G\|_*/\sqrt{d}\cdot I$ → PolarGrad 推荐配置
+  \end{itemize}
+  \checkmarkitem \theory{理解为什么 PolarGrad 宣称比 Muon 更完备（保留部分尺度信息）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 39 天 · 下午（2.5h）—— 实现}
+\begin{itemize}
+  \checkmarkitem \practice{实现 PolarGrad 的简化版（使用 SVD 做极分解）}
+  \checkmarkitem \practice{在 toy problem 上对比 Muon vs PolarGrad 的轨迹差异}
+  \checkmarkitem \practice{观察：$\phi(P)$ 的不同选择如何影响更新方向？}
+  \checkmarkitem \practice{完成课件工程练习 3：NS 迭代收敛实验（含收敛阶验证）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 39 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{区分：曲率预条件 vs 梯度预条件 —— 各自的代表、优势、局限}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 40 ---
+\subsection{周四：ASGO 与最新进展}
+
+\begin{dayplan}{第 40 天 · 上午（2.5h）—— 理论}
+\begin{itemize}
+  \checkmarkitem \theory{精读 optimizer\_lecture\_v2.pdf \S 13：ASGO 单侧预条件器}
+  \checkmarkitem \theory{理解 ASGO 的动机：只用单侧预条件（$\Lambda_t^{-1}$），降低 Shampoo 的计算量}
+  \checkmarkitem \theory{推导 ASGO 的收敛保证（非光滑凸情形）}
+  \checkmarkitem \theory{理解 ASGO 与 Muon 的关系：ASGO : Muon = AdaGrad : SignSGD}
+  \checkmarkitem \theory{阅读 ASGO 在 GPT-2 (124M) 上的实验：验证 loss 3.342 与 Muon 持平}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 40 天 · 下午（2.5h）—— 文献拓展}
+\begin{itemize}
+  \checkmarkitem \reading{选读 2--3 篇扩展文献并做笔记：}
+  \begin{itemize}
+    \item Shazeer \& Stern (2018) — Adafactor（低内存自适应学习率）
+    \item Martens (2020) — Natural Gradient Method 综述
+    \item Dauphin et al. (2024) — Cautious Adaptation via Randomized Smoothing
+  \end{itemize}
+  \checkmarkitem \note{每篇论文写一段总结：核心贡献 + 与已学内容的关联}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 40 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{更新优化器全景图，加入 Adafactor、ASGO、Natural Gradient}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 41 ---
+\subsection{周五：统一实验框架 + 复现 Adam 反例}
+
+\begin{dayplan}{第 41 天 · 上午（2.5h）—— 代码整理}
+\begin{itemize}
+  \checkmarkitem \practice{建立统一的优化器实验框架（类似 \texttt{torch.optim} 的 API 风格）}
+  \checkmarkitem \practice{支持：切换函数（凸/强凸/非凸/旋转/矩阵）、切换优化器、统一日志和可视化}
+  \checkmarkitem \practice{为每个优化器写单元测试（toy problem 上的预期行为验证）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 41 天 · 下午（2.5h）—— 实验}
+\begin{itemize}
+  \checkmarkitem \practice{复现 Adam 旋转敏感性的反例（Reddi et al. 中构造的简单在线问题）}
+  \checkmarkitem \practice{验证：Adam 在反例上的 behavior（是否发散/震荡）vs AMSGrad 的稳定性}
+  \checkmarkitem \practice{运行完整的一键对比实验：所有 7 种优化器在 3 种函数上的对比}
+  \checkmarkitem \practice{生成对比图集（loss 曲线 + 轨迹图 + 有效学习率热力图）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 41 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{检查：现在能否回答「每个优化器为什么被发明？解决了什么问题？付出了什么代价？」}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 42 ---
+\subsection{周六：第 7 周收尾——知识体系整合}
+
+\begin{dayplan}{第 42 天 · 上午（2.5h）—— 全景图完善}
+\begin{itemize}
+  \checkmarkitem \theory{完善你的「A3 优化器全景图」：}
+  \begin{itemize}
+    \item 演化箭头：哪个优化器是从哪个演化来的？解决了什么问题？
+    \item 理论工具链：每个优化器依赖了哪些数学工具？
+    \item 工程考量：内存、计算、数值稳定性的 practical guide
+  \end{itemize}
+  \checkmarkitem \note{确保能向同行清晰讲解从 SGD 到 PolarGrad 的完整故事线}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 42 天 · 下午（2.5h）—— 最终代码整理}
+\begin{itemize}
+  \checkmarkitem \practice{将所有 7 周代码整理到统一的 GitHub 仓库结构中}
+  \checkmarkitem \practice{编写仓库 README：包含安装说明、实验复现步骤、学习资源索引}
+  \checkmarkitem \practice{为下周 Research Memo 确定研究方向（从老师提供的 6 个方向中选择 1--2 个）}
+  \checkmarkitem \practice{初读选定方向的 2--3 篇相关论文}
+\end{itemize}
+\end{dayplan}
+
+\vspace{0.3cm}
+\begin{center}
+\fcolorbox{deliver}{daybg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{[完成]  第 7 周核心交付物：}6 篇核心论文重读笔记 + 12 种优化器全景对比表（7 维度）+ Muon 旋转敏感性实验 + PolarGrad 实现 + Adam 反例复现 + 统一实验框架 + A3 全景图
+\end{minipage}}
+\end{center}
+
+\newpage
+
+% ======================================================================
+\section{第 8 周：Research Memo —— 找到你的研究问题}
+% ======================================================================
+
+\begin{center}
+\fcolorbox{headerbg}{weekbg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{学习目标：}综合前 7 周的理论与实验积累，识别一个值得深入的研究方向，写一份正式的一页 Research Memo。
+\end{minipage}}
+\end{center}
+
+% --- Day 43 ---
+\subsection{周一：研究方向探索}
+
+\begin{dayplan}{第 43 天 · 上午（2.5h）—— 方向调研}
+\begin{itemize}
+  \checkmarkitem \reading{精读老师提供的 6 个研究方向，选 2 个你最感兴趣的深入调研}
+  \checkmarkitem \reading{对每个方向搜索 3--5 篇相关论文（\"Cited by\" 相关论文）}
+  \checkmarkitem \note{写调研笔记：每个方向的现有方法、关键挑战、可能的突破口}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 43 天 · 下午（2.5h）—— 确定方向}
+\begin{itemize}
+  \checkmarkitem \practice{基于前 7 周的实验经验，分析每个方向的可行性（你有哪些代码可以复用？）}
+  \checkmarkitem \note{确定 1 个主要研究方向，写下选择的理由}
+  \checkmarkitem \note{列出你已有的优势（实现了哪些优化器？做了哪些实验？）和需要补充的知识}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 43 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{写半页纸：你的研究问题的非正式描述（像在对朋友解释）}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 44 ---
+\subsection{周二：撰写 Problem + Assumptions}
+
+\begin{dayplan}{第 44 天 · 上午（2.5h）—— 写作}
+\begin{itemize}
+  \checkmarkitem \note{撰写 Research Memo 的「Problem」部分：}
+  \begin{itemize}
+    \item 要解决什么具体问题？
+    \item 为什么重要？（引用实验数据支持）
+    \item 现有方法的不足是什么？（用你的对比实验结果！）
+  \end{itemize}
+  \checkmarkitem \note{撰写「Assumptions」部分：}
+  \begin{itemize}
+    \item 假设满足什么条件？
+    \item 这些假设在深度学习场景下合理吗？
+    \item 有没有可能放松的假设？
+  \end{itemize}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 44 天 · 下午（2.5h）—— 完善}
+\begin{itemize}
+  \checkmarkitem \practice{用你前 7 周的实验数据支持 Problem 陈述（例如\"Adam 在旋转条件下慢 X 倍\"）}
+  \checkmarkitem \note{与老师提供的 6 个方向中已有的工作进行差异化分析}
+  \checkmarkitem \note{审阅：这部分能不能说服读者「这个问题值得解决」？}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 44 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{让其他人（或自己在第二天）读一遍 Problem + Assumptions，检查逻辑漏洞}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 45 ---
+\subsection{周三：撰写 Algorithm + Theory}
+
+\begin{dayplan}{第 45 天 · 上午（2.5h）—— 写作}
+\begin{itemize}
+  \checkmarkitem \note{撰写「Algorithm」部分：}
+  \begin{itemize}
+    \item 提出什么新方法？
+    \item 写出核心更新公式（伪代码级别）
+    \item 与现有方法的公式对比（突出创新点）
+  \end{itemize}
+  \checkmarkitem \note{撰写「Theory」部分：}
+  \begin{itemize}
+    \item 计划证明什么？（收敛率？regret bound？复杂度降低？）
+    \item 证明的骨架是什么？（从哪些假设出发？用到哪些工具？）
+    \item 最困难的步骤可能在哪里？
+  \end{itemize}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 45 天 · 下午（2.5h）—— 验证}
+\begin{itemize}
+  \checkmarkitem \practice{如果可能，在 toy problem 上快速验证算法的一个核心子步骤}
+  \checkmarkitem \note{检查理论路线是否 feasible（不要 claim 了做不到的定理）}
+  \checkmarkitem \note{确保公式正确（检查维度、符号一致性）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 45 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{审阅：Algorithm 的描述是否清晰到别人可以直接实现？}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 46 ---
+\subsection{周四：撰写 Experiments + Risks}
+
+\begin{dayplan}{第 46 天 · 上午（2.5h）—— 写作}
+\begin{itemize}
+  \checkmarkitem \note{撰写「Experiments」部分：}
+  \begin{itemize}
+    \item 最小可控实验是什么？（toy problem 上验证什么假设？）
+    \item 中等规模验证？（MNIST MLP、CIFAR-10 CNN）
+    \item 大到什么规模可以证明方法的有效性？（GPT-2 scale？）
+    \item 需要对比哪些 baseline？
+  \end{itemize}
+  \checkmarkitem \note{撰写「Risks」部分：}
+  \begin{itemize}
+    \item 什么可能失败？（数值不稳定？计算开销过大？理论 gap？）
+    \item 每个风险的备选方案是什么？
+  \end{itemize}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 46 天 · 下午（2.5h）—— 完善}
+\begin{itemize}
+  \checkmarkitem \note{整合所有部分，形成完整的一页 Research Memo 初稿（800--1500 字）}
+  \checkmarkitem \note{精炼语言：删掉不必要的词，确保每一句都在推动论证}
+  \checkmarkitem \note{添加参考文献引用（BibTeX 格式）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 46 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{自己朗读一遍 Research Memo，检查流畅度和论证连贯性}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 47 ---
+\subsection{周五：修改完善}
+
+\begin{dayplan}{第 47 天 · 上午（2.5h）—— 修改}
+\begin{itemize}
+  \checkmarkitem \note{根据自我审阅修改 Research Memo}
+  \checkmarkitem \note{重点检查：}
+  \begin{itemize}
+    \item Problem 的紧迫性表达是否充分？
+    \item Algorithm 的创新性是否清晰？
+    \item Theory 的可行性是否合理？
+    \item Experiments 的设计是否能回答核心问题？
+  \end{itemize}
+  \checkmarkitem \note{排版：确保一页纸能容纳所有内容（调整字号、边距、图表大小）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 47 天 · 下午（2.5h）—— 最终检查}
+\begin{itemize}
+  \checkmarkitem \practice{准备一个 3 分钟的 elevator pitch（口头演练）}
+  \checkmarkitem \note{与老师的 8 周学习计划中的检验标准对照，确保满足}
+  \checkmarkitem \note{最终排版 + 导出 PDF 版本}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 47 天 · 晚上（1h）—— 复习总结}
+\begin{itemize}
+  \checkmarkitem \note{庆祝！ 你已经完成了 8 周高密度学习计划！}
+\end{itemize}
+\end{dayplan}
+
+% --- Day 48 ---
+\subsection{周六：最终答辩准备 + 课程总结}
+
+\begin{dayplan}{第 48 天 · 上午（2.5h）—— 答辩准备}
+\begin{itemize}
+  \checkmarkitem \note{准备最终答辩/汇报材料（10--15 页 slides）：}
+  \begin{itemize}
+    \item 课程内容总览（3 页）
+    \item 你的核心实验发现（4 页）
+    \item Research Memo 内容（5 页）
+    \item 未来工作方向（2 页）
+  \end{itemize}
+  \checkmarkitem \practice{准备 demo（运行你的实验代码展示关键结果）}
+\end{itemize}
+\end{dayplan}
+
+\begin{dayplan}{第 48 天 · 下午（2.5h）—— 课程总结}
+\begin{itemize}
+  \checkmarkitem \note{整理整个 8 周课程的核心收获（知识、技能、研究能力）}
+  \checkmarkitem \practice{整理最终代码仓库（README、文档、测试、实验脚本）}
+  \checkmarkitem \note{写课程总结 + 未来学习路线（本课程之后的进阶方向）}
+  \checkmarkitem \note{补充阅读清单：推荐论文和教材供后续深入}
+\end{itemize}
+\end{dayplan}
+
+\vspace{0.3cm}
+\begin{center}
+\fcolorbox{deliver}{daybg}{\begin{minipage}{0.9\textwidth}
+\centering\textbf{[完成]  第 8 周核心交付物：}一页 Research Memo（Problem → Assumptions → Algorithm → Theory → Experiments → Risks）+ 答辩 slides + 最终代码仓库 + 课程总结
+\end{minipage}}
+\end{center}
+
+\newpage
+
+% ======================================================================
+\section*{附录 A：核心论文阅读清单}
+% ======================================================================
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{论文} & \textbf{作者/年份} & \textbf{核心贡献} \\
+\midrule
+Adam & Kingma \& Ba (2014) & EMA + 偏差修正 + 对角预条件 \\
+AdamW & Loshchilov \& Hutter (2017) & Weight Decay 与自适应梯度解耦 \\
+AMSGrad & Reddi et al. (2018) & 修复 Adam 收敛证明的错误 \\
+AdaGrad & Duchi, Hazan \& Singer (2011) & 逐坐标自适应步长 + Regret 分析 \\
+Shampoo & Gupta, Koren \& Singer (2018) & Kronecker 结构化的矩阵预条件 \\
+SOAP & Vyas et al. (2024) & Shampoo 特征基 + Adam EMA \\
+Muon & Jordan \& Bernstein et al. (2024) & Newton-Schulz 谱正交化动量 \\
+PolarGrad & Lau, Long \& Su (2025) & 极分解统一框架 \\
+ASGO & Chen et al. (2025) & 单侧预条件器 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section*{附录 B：教材参考}
+
+\begin{itemize}
+  \item \textbf{Bubeck (2015)} — \textit{Convex Optimization: Algorithms and Complexity}. Foundations and Trends in ML. \S 3（光滑凸优化的梯度方法）.
+  \item \textbf{Nesterov (2018)} — \textit{Lectures on Convex Optimization}. Springer. \S 1.2, \S 2.1（凸分析基础、Oracle 下界）.
+  \item \textbf{Boyd \& Vandenberghe (2004)} — \textit{Convex Optimization}. Cambridge. \S 9.2--9.3（梯度下降、最陡下降、条件数）.
+  \item \textbf{Garrigos \& Gower (2023)} — \textit{Handbook of Convergence Theorems for Gradient Descent}（GD/SGD 收敛定理速查手册）.
+  \item \textbf{张贤科} — 《高等线性代数》，清华大学出版社（Jordan 标准形、矩阵函数、广义逆）.
+  \item \textbf{Golub \& Van Loan (2013)} — \textit{Matrix Computations}, 4th ed.（数值线性代数圣经）.
+  \item \textbf{Horn \& Johnson (2013)} — \textit{Matrix Analysis}, 2nd ed.（矩阵范数、Loewner 序、矩阵函数）.
+  \item \textbf{Higham (2008)} — \textit{Functions of Matrices: Theory and Computation}, SIAM（Newton-Schulz 和极分解的数值算法）.
+\end{itemize}
+
+\section*{附录 C：每周日复习清单}
+
+\begin{enumerate}[leftmargin=*]
+  \item 回顾本周所有手写证明（能否不看笔记独立推出来？）
+  \item 整理本周代码，确保每个实验可复现（运行 \texttt{python main.py} 即可）
+  \item 补充本周笔记中标记的「待深入」项
+  \item 将本周的核心发现写成一个 bullet-point 摘要（为第 8 周 Research Memo 储备素材）
+  \item 预习下周的课件章节（至少浏览一遍标题和公式）
+\end{enumerate}
+
+\end{document}
