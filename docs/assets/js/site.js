@@ -5,7 +5,8 @@
   const themeToggle = document.querySelector('.theme-toggle');
   const navToggle = document.querySelector('.nav-toggle');
   const nav = document.querySelector('.site-nav');
-  const navLinks = Array.from(document.querySelectorAll('.site-nav a[href^="#"]'));
+  const menuLinks = Array.from(document.querySelectorAll('.site-nav a'));
+  const sectionLinks = Array.from(document.querySelectorAll('.site-nav a[href^="#"]'));
 
   function syncThemeControl() {
     if (!themeToggle) return;
@@ -43,7 +44,7 @@
     navToggle.setAttribute('aria-expanded', String(willOpen));
   });
 
-  navLinks.forEach(function (link) {
+  menuLinks.forEach(function (link) {
     link.addEventListener('click', closeNav);
   });
 
@@ -51,7 +52,7 @@
     if (event.key === 'Escape') closeNav();
   });
 
-  const sections = navLinks
+  const sections = sectionLinks
     .map(function (link) { return document.querySelector(link.getAttribute('href')); })
     .filter(Boolean);
 
@@ -62,7 +63,7 @@
         .sort(function (a, b) { return b.intersectionRatio - a.intersectionRatio; })[0];
 
       if (!visible) return;
-      navLinks.forEach(function (link) {
+      sectionLinks.forEach(function (link) {
         const isActive = link.getAttribute('href') === '#' + visible.target.id;
         link.classList.toggle('is-active', isActive);
         if (isActive) {

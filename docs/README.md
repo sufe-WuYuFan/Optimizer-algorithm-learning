@@ -14,7 +14,8 @@ python -m http.server 8000
 
 ## 内容维护
 
-- 个人资料、教育背景、研究兴趣和资料链接集中在 `index.html`。
+- 个人资料、教育背景、学生工作、获奖与助教经历集中在 `index.html`。
+- PDF 资料位于独立的第二层页面 `notes.html`，主页只保留 Notes 入口。
 - 视觉样式位于 `assets/css/site.css`。
 - 明暗主题、移动导航和当前栏目高亮位于 `assets/js/site.js`。
 - GitHub 头像加载失败时会使用 `assets/images/avatar.svg`。
