@@ -1,29 +1,29 @@
 # Wu Yufan Academic CV
 
-一个无需构建工具的静态学术主页，视觉方向参考 AcademicPages 的 CV 页面，但版式、配色与交互均为独立实现。
+A static academic profile that requires no build tools. Its visual direction is inspired by AcademicPages CV layouts, while the page structure, color palette, and interactions are independently implemented.
 
-## 本地预览
+## Local Preview
 
-在站点目录运行：
+Run the following command from the site directory:
 
 ```powershell
 python -m http.server 8000
 ```
 
-然后访问 `http://localhost:8000/`。
+Then open `http://localhost:8000/` in a browser.
 
-## 内容维护
+## Content Maintenance
 
-- 个人资料、教育背景、学生工作、获奖与助教经历集中在 `index.html`。
-- PDF 资料位于独立的第二层页面 `notes.html`，主页只保留 Notes 入口。
-- 视觉样式位于 `assets/css/site.css`。
-- 明暗主题、移动导航和当前栏目高亮位于 `assets/js/site.js`。
-- GitHub 头像加载失败时会使用 `assets/images/avatar.svg`。
+- Personal information, education, student leadership, honors, and teaching experience are maintained in `index.html`.
+- PDF materials are listed on the separate second-level page `notes.html`; the homepage contains only the Notes entry point.
+- Visual styles are defined in `assets/css/site.css`.
+- Theme switching, mobile navigation, and active-section highlighting are implemented in `assets/js/site.js`.
+- The homepage uses the personal photo at `assets/images/profile-photo.png`; if it cannot be loaded, the interface automatically falls back to `assets/images/avatar.svg`.
 
 ## GitHub Pages
 
-仓库中的 `.github/workflows/pages.yml` 会把根目录 `docs/` 发布到 GitHub Pages。首次使用时，在仓库 **Settings → Pages → Build and deployment → Source** 中选择 **GitHub Actions**，随后手动运行一次工作流或推送 `docs/` 的更新。
+The `.github/workflows/pages.yml` workflow publishes the root-level `docs/` directory to GitHub Pages. For initial setup, select **GitHub Actions** under **Settings → Pages → Build and deployment → Source**, then run the workflow manually or push an update to `docs/`.
 
-项目站地址预计为：
+Site URL:
 
 `https://sufe-WuYuFan.github.io/Optimizer-algorithm-learning/`

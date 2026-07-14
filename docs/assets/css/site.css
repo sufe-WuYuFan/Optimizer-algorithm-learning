@@ -290,8 +290,8 @@ html[data-theme="dark"] .icon--moon {
   height: 100%;
   object-fit: cover;
   object-position: center 15%;
-  transform: scale(2.05);
-  transform-origin: 65% 52%;
+  transform: scale(1.2);
+  transform-origin: 62% 50%;
 }
 
 .profile__avatar.is-fallback {
