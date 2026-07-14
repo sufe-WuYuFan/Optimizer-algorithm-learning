@@ -84,6 +84,7 @@
     function useFallback() {
       const fallbackUrl = new URL(image.dataset.fallback, document.baseURI).href;
       if (image.src === fallbackUrl) return;
+      image.classList.add('is-fallback');
       image.src = fallbackUrl;
     }
 

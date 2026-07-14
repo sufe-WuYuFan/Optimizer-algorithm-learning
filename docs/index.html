@@ -63,14 +63,18 @@
     <aside class="profile" aria-label="个人信息">
       <div class="profile__sticky">
         <div class="profile__avatar-wrap">
-          <img
-            class="profile__avatar"
-            src="https://avatars.githubusercontent.com/u/300102223?v=4"
-            data-fallback="assets/images/avatar.svg"
-            alt="Wu Yufan 的 GitHub 头像"
-            width="176"
-            height="176"
-          >
+          <div class="profile__avatar-frame">
+            <img
+              class="profile__avatar"
+              src="assets/images/profile-photo.png"
+              data-fallback="assets/images/avatar.svg"
+              alt="吴宇凡的个人照片"
+              width="176"
+              height="176"
+              fetchpriority="high"
+              decoding="async"
+            >
+          </div>
         </div>
         <div class="profile__identity">
           <h1>Wu Yufan</h1>
